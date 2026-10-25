@@ -16,6 +16,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _geminiKeyController = TextEditingController();
   bool _isLoading = true;
   bool _isTestingToken = false;
+  bool _isTestingGemini = false;
 
   @override
   void initState() {
@@ -106,6 +107,102 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _testGeminiConnection() async {
+    final key = _geminiKeyController.text.trim();
+    if (key.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Masukkan Gemini API Key terlebih dahulu.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isTestingGemini = true);
+    try {
+      final res = await http.get(
+        Uri.parse('https://generativelanguage.googleapis.com/v1beta/models?key=$key'),
+      ).timeout(const Duration(seconds: 10));
+
+      if (mounted) {
+        if (res.statusCode == 200) {
+          final data = jsonDecode(res.body);
+          final List modelsList = data['models'] ?? [];
+          final working = <String>[];
+          for (var m in modelsList) {
+            final List methods = m['supportedGenerationMethods'] ?? [];
+            if (methods.contains('generateContent')) {
+              final name = m['name']?.toString().replaceFirst('models/', '') ?? '';
+              if (name.isNotEmpty) working.add(name);
+            }
+          }
+
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Row(
+                children: [
+                  Icon(Icons.check_circle, color: Colors.green),
+                  SizedBox(width: 8),
+                  Text('Gemini Key Valid!'),
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('Ditemukan ${working.length} model aktif untuk akun Anda:'),
+                    const SizedBox(height: 10),
+                    ...working.take(8).map((m) => Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2.0),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.auto_awesome, size: 14, color: Colors.amber),
+                              const SizedBox(width: 6),
+                              Expanded(child: Text(m, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
+                            ],
+                          ),
+                        )),
+                    if (working.length > 8)
+                      Text('...dan ${working.length - 8} model lainnya', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('❌ Gemini Key Ditolak (${res.statusCode}): ${res.body}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal verifikasi Gemini: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isTestingGemini = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -187,10 +284,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 prefixIcon: Icon(Icons.auto_awesome),
               ),
             ),
-            const SizedBox(height: 6),
-            const Text(
-              'Digunakan untuk membuat naskah video otomatis dari ide/topik.',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
+            const SizedBox(height: 4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Digunakan untuk naskah & judul AI',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                TextButton.icon(
+                  onPressed: _isTestingGemini ? null : _testGeminiConnection,
+                  icon: _isTestingGemini
+                      ? const SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.auto_awesome, size: 16, color: Colors.amber),
+                  label: const Text('Tes Gemini Key', style: TextStyle(fontSize: 12)),
+                ),
+              ],
             ),
             const SizedBox(height: 30),
             SizedBox(

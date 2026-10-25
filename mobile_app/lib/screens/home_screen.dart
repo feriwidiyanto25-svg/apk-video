@@ -203,11 +203,65 @@ Kembalikan respon HANYA dalam format JSON murni yang valid tanpa teks penjelasan
 }
 ''';
 
-      final models = ['gemini-1.5-flash', 'gemini-2.0-flash'];
+      // 1. Dynamic Discovery: Ambil semua model yang aktif & didukung oleh Google untuk API Key ini
+      List<String> candidateModels = [];
+      try {
+        final listUrl = Uri.parse('https://generativelanguage.googleapis.com/v1beta/models?key=$geminiKey');
+        final listRes = await http.get(listUrl).timeout(const Duration(seconds: 8));
+        if (listRes.statusCode == 200) {
+          final listData = jsonDecode(listRes.body);
+          final List modelsList = listData['models'] ?? [];
+          for (var m in modelsList) {
+            final List methods = m['supportedGenerationMethods'] ?? [];
+            if (methods.contains('generateContent')) {
+              final name = m['name']?.toString() ?? '';
+              final clean = name.replaceFirst('models/', '');
+              if (clean.isNotEmpty) {
+                candidateModels.add(clean);
+              }
+            }
+          }
+        }
+      } catch (_) {}
+
+      // 2. Prioritaskan model: utamakan model Flash & versi terbaru (2.5, 3.x, 2.0, 1.5)
+      candidateModels.sort((a, b) {
+        int score(String name) {
+          int s = 0;
+          if (name.contains('flash')) s += 100;
+          if (name.contains('3.')) s += 60;
+          if (name.contains('2.5')) s += 50;
+          if (name.contains('2.0')) s += 30;
+          if (name.contains('1.5')) s += 20;
+          if (name.contains('pro')) s += 10;
+          if (name.contains('exp')) s -= 5;
+          return s;
+        }
+        return score(b).compareTo(score(a));
+      });
+
+      // 3. Cadangan lengkap jika endpoint daftar model tidak dapat dijangkau
+      final fallbackList = [
+        'gemini-2.5-flash',
+        'gemini-2.5-pro',
+        'gemini-2.0-flash-exp',
+        'gemini-1.5-flash',
+        'gemini-1.5-flash-latest',
+        'gemini-1.5-pro',
+        'gemini-1.5-pro-latest',
+        'gemini-pro',
+      ];
+      for (var fb in fallbackList) {
+        if (!candidateModels.contains(fb)) {
+          candidateModels.add(fb);
+        }
+      }
+
       String? rawResponse;
+      String? usedModel;
       String? errorMsg;
 
-      for (var model in models) {
+      for (var model in candidateModels) {
         try {
           final url = Uri.parse('https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$geminiKey');
           final response = await http.post(
@@ -222,19 +276,20 @@ Kembalikan respon HANYA dalam format JSON murni yang valid tanpa teks penjelasan
                 }
               ]
             }),
-          );
+          ).timeout(const Duration(seconds: 15));
 
           if (response.statusCode == 200) {
             final data = jsonDecode(response.body);
             rawResponse = data['candidates'][0]['content']['parts'][0]['text']?.toString().trim();
             if (rawResponse != null && rawResponse.isNotEmpty) {
+              usedModel = model;
               break;
             }
           } else {
-            errorMsg = '(${response.statusCode}): ${response.body}';
+            errorMsg = '$model (${response.statusCode}): ${response.body}';
           }
         } catch (e) {
-          errorMsg = e.toString();
+          errorMsg = '$model: $e';
         }
       }
 
@@ -274,8 +329,8 @@ Kembalikan respon HANYA dalam format JSON murni yang valid tanpa teks penjelasan
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('✨ Naskah, Judul & Deskripsi berhasil dibuat oleh Gemini! Anda dapat menyesuaikannya.'),
+            SnackBar(
+              content: Text('✨ Naskah, Judul & Deskripsi berhasil dibuat ($usedModel)!'),
               backgroundColor: Colors.green,
             ),
           );

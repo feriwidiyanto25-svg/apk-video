@@ -55,7 +55,52 @@ class GitHubReleaseClient:
 
 def generate_script_with_gemini(topic, gemini_api_key):
     log(f"Generating script for topic: '{topic}' using Gemini...")
-    models = ["gemini-1.5-flash", "gemini-2.0-flash"]
+    
+    # 1. Dynamically discover all supported models for this key
+    candidate_models = []
+    try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models?key={gemini_api_key}"
+        resp = requests.get(url, timeout=10)
+        if resp.status_code == 200:
+            data = resp.json()
+            for m in data.get("models", []):
+                methods = m.get("supportedGenerationMethods", [])
+                if "generateContent" in methods:
+                    name = m.get("name", "")
+                    clean_name = name.replace("models/", "")
+                    if clean_name:
+                        candidate_models.append(clean_name)
+    except Exception as e:
+        log(f"Dynamic Gemini model discovery warning: {e}")
+
+    def model_score(name):
+        s = 0
+        if "flash" in name: s += 100
+        if "3." in name: s += 60
+        if "2.5" in name: s += 50
+        if "2.0" in name: s += 30
+        if "1.5" in name: s += 20
+        if "pro" in name: s += 10
+        if "exp" in name: s -= 5
+        return s
+
+    candidate_models.sort(key=model_score, reverse=True)
+
+    fallbacks = [
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemini-2.0-flash-exp",
+        "gemini-1.5-flash",
+        "gemini-1.5-flash-latest",
+        "gemini-1.5-pro",
+        "gemini-pro"
+    ]
+    for fb in fallbacks:
+        if fb not in candidate_models:
+            candidate_models.append(fb)
+
+    log(f"Discovered candidate Gemini models: {candidate_models[:6]}")
+
     prompt = (
         f"Buatkan naskah video pendek (YouTube Shorts / TikTok / Reels) berdurasi 30-45 detik mengenai topik berikut:\n"
         f"\"{topic}\"\n\n"
@@ -66,7 +111,7 @@ def generate_script_with_gemini(topic, gemini_api_key):
         "4. Panjang naskah 60-80 kata."
     )
     
-    for model in models:
+    for model in candidate_models:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={gemini_api_key}"
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
         try:
@@ -74,10 +119,12 @@ def generate_script_with_gemini(topic, gemini_api_key):
             if resp.status_code == 200:
                 data = resp.json()
                 script = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-                log(f"Generated script with {model}:\n{script}")
+                log(f"Successfully generated script with model {model}:\n{script}")
                 return script
+            else:
+                log(f"Model {model} returned {resp.status_code}: {resp.text[:120]}")
         except Exception as e:
-            log(f"Failed with {model}: {e}")
+            log(f"Model {model} error: {e}")
 
     log("Gemini API fallback to topic directly.")
     return topic
