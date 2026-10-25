@@ -9,6 +9,8 @@ class JobModel {
   String? localVideoPath;
   final DateTime createdAt;
   String? error;
+  String? videoTitle;
+  String? videoDescription;
 
   JobModel({
     required this.id,
@@ -21,6 +23,8 @@ class JobModel {
     this.localVideoPath,
     required this.createdAt,
     this.error,
+    this.videoTitle,
+    this.videoDescription,
   });
 
   Map<String, dynamic> toJson() {
@@ -35,6 +39,8 @@ class JobModel {
       'localVideoPath': localVideoPath,
       'createdAt': createdAt.toIso8601String(),
       'error': error,
+      'videoTitle': videoTitle,
+      'videoDescription': videoDescription,
     };
   }
 
@@ -50,7 +56,8 @@ class JobModel {
       localVideoPath: json['localVideoPath'],
       createdAt: DateTime.tryParse(json['createdAt'] ?? '') ?? DateTime.now(),
       error: json['error'],
+      videoTitle: json['videoTitle'] ?? json['topic'] ?? '',
+      videoDescription: json['videoDescription'] ?? '',
     );
   }
 }
-

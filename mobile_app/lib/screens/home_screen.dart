@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
@@ -18,7 +19,11 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final _textController = TextEditingController();
+  final _topicController = TextEditingController();
+  final _titleController = TextEditingController();
+  final _descController = TextEditingController();
+  final _scriptController = TextEditingController();
+
   String _selectedVoice = 'id-ID-GadisNeural';
   String _selectedMusic = 'music1.mp3';
   File? _selectedMedia;
@@ -75,6 +80,27 @@ class _HomeScreenState extends State<HomeScreen> {
     },
   ];
 
+  @override
+  void dispose() {
+    _topicController.dispose();
+    _titleController.dispose();
+    _descController.dispose();
+    _scriptController.dispose();
+    super.dispose();
+  }
+
+  void _copyText(String text, String label) {
+    if (text.trim().isEmpty) return;
+    Clipboard.setData(ClipboardData(text: text.trim()));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('✅ $label berhasil disalin ke clipboard!'),
+        backgroundColor: Colors.green[700],
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
   Future<void> _pickMedia() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
@@ -109,11 +135,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _generateScriptWithGemini() async {
-    final topic = _textController.text.trim();
+    final topic = _topicController.text.trim();
     if (topic.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Ketik ide atau topik singkat terlebih dahulu di kolom teks!'),
+          content: Text('Ketik ide atau topik singkat terlebih dahulu di kolom Topik!'),
           backgroundColor: Colors.orange,
         ),
       );
@@ -135,7 +161,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
           content: const Text(
-            'Untuk membuat naskah otomatis dengan AI, harap masukkan Google Gemini API Key gratis Anda di tab Pengaturan.',
+            'Untuk membuat naskah, judul, dan deskripsi otomatis dengan AI, harap masukkan Google Gemini API Key gratis Anda di tab Pengaturan.',
           ),
           actions: [
             TextButton(
@@ -159,16 +185,26 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _isGeneratingScript = true);
 
     try {
-      final promptText = 'Buatkan naskah video pendek (YouTube Shorts / TikTok / Reels) berdurasi 30-45 detik mengenai topik berikut:\n'
-          '"$topic"\n\n'
-          'Aturan Penting:\n'
-          '1. Gunakan Bahasa Indonesia yang santai, memikat, dan memiliki HOOK rasa penasaran yang kuat di 3 detik pertama.\n'
-          '2. Jangan gunakan tanda kurung, instruksi visual, intro klise seperti "Halo guys", atau emoji.\n'
-          '3. Tuliskan HANYA kata-kata yang akan diucapkan narator secara langsung (voiceover only).\n'
-          '4. Panjang naskah 60-80 kata.';
+      final promptText = '''
+Bertindaklah sebagai pembuat konten video pendek viral profesional (YouTube Shorts, Instagram Reels, Facebook Reels / FB Pro, TikTok).
+Buatkan konten video pendek berdurasi 30-45 detik mengenai topik berikut:
+"$topic"
+
+Aturan Penting:
+1. title: Judul video yang sangat memikat, click-worthy, memicu rasa penasaran, dan dilengkapi hashtag utama (maksimal 70 karakter, contoh: "5 Rahasia Kopi yang Bikin Melongo! ☕🔥 #shorts").
+2. description: Deskripsi lengkap siap copy-paste ke Facebook & YouTube. Berikan kalimat pengantar yang memikat, ajakan interaksi (like/share/komentar), dan 6-8 hashtag populer relevan (seperti #shorts #reels #fbpro #viral #faktaunik).
+3. script: Naskah narasi suara Bahasa Indonesia santai (60-80 kata) dengan HOOK penasaran yang kuat di 3 detik pertama. Tuliskan HANYA kata-kata yang diucapkan narator secara langsung (voiceover only). Jangan gunakan tanda kurung, intro "Halo guys", atau instruksi visual.
+
+Kembalikan respon HANYA dalam format JSON murni yang valid tanpa teks penjelasan di luar JSON:
+{
+  "title": "...",
+  "description": "...",
+  "script": "..."
+}
+''';
 
       final models = ['gemini-1.5-flash', 'gemini-2.0-flash'];
-      String? generatedScript;
+      String? rawResponse;
       String? errorMsg;
 
       for (var model in models) {
@@ -190,8 +226,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
           if (response.statusCode == 200) {
             final data = jsonDecode(response.body);
-            generatedScript = data['candidates'][0]['content']['parts'][0]['text']?.toString().trim();
-            if (generatedScript != null && generatedScript.isNotEmpty) {
+            rawResponse = data['candidates'][0]['content']['parts'][0]['text']?.toString().trim();
+            if (rawResponse != null && rawResponse.isNotEmpty) {
               break;
             }
           } else {
@@ -202,14 +238,44 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }
 
-      if (generatedScript != null && generatedScript.isNotEmpty) {
-        setState(() {
-          _textController.text = generatedScript!;
-        });
+      if (rawResponse != null && rawResponse.isNotEmpty) {
+        String cleanJson = rawResponse;
+        if (cleanJson.contains('```json')) {
+          cleanJson = cleanJson.split('```json')[1].split('```')[0].trim();
+        } else if (cleanJson.contains('```')) {
+          cleanJson = cleanJson.split('```')[1].split('```')[0].trim();
+        }
+
+        try {
+          final decoded = jsonDecode(cleanJson);
+          if (decoded is Map) {
+            setState(() {
+              if (decoded['title'] != null) _titleController.text = decoded['title'].toString().trim();
+              if (decoded['description'] != null) _descController.text = decoded['description'].toString().trim();
+              if (decoded['script'] != null) _scriptController.text = decoded['script'].toString().trim();
+            });
+          }
+        } catch (_) {
+          // Fallback parsing regex
+          final titleMatch = RegExp(r'"title"\s*:\s*"([^"]+)"').firstMatch(cleanJson);
+          final scriptMatch = RegExp(r'"script"\s*:\s*"([^"]+)"').firstMatch(cleanJson);
+          final descMatch = RegExp(r'"description"\s*:\s*"([^"]+)"').firstMatch(cleanJson);
+
+          setState(() {
+            if (titleMatch != null) _titleController.text = titleMatch.group(1)!;
+            if (descMatch != null) _descController.text = descMatch.group(1)!.replaceAll(r'\n', '\n');
+            if (scriptMatch != null) {
+              _scriptController.text = scriptMatch.group(1)!;
+            } else {
+              _scriptController.text = rawResponse!;
+            }
+          });
+        }
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('✨ Naskah berhasil dibuat oleh Gemini! Anda dapat membacanya atau mengeditnya.'),
+              content: Text('✨ Naskah, Judul & Deskripsi berhasil dibuat oleh Gemini! Anda dapat menyesuaikannya.'),
               backgroundColor: Colors.green,
             ),
           );
@@ -221,7 +287,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Gagal membuat naskah AI: $e'),
+            content: Text('Gagal membuat konten AI: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -234,10 +300,18 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _submitJob() async {
-    final text = _textController.text.trim();
-    if (text.isEmpty) {
+    final topic = _topicController.text.trim();
+    final script = _scriptController.text.trim().isNotEmpty
+        ? _scriptController.text.trim()
+        : topic;
+    final title = _titleController.text.trim().isNotEmpty
+        ? _titleController.text.trim()
+        : (topic.isNotEmpty ? topic : 'Video Shorts');
+    final description = _descController.text.trim();
+
+    if (script.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Silakan masukkan ide topik atau naskah video terlebih dahulu.')),
+        const SnackBar(content: Text('Silakan masukkan topik atau naskah video terlebih dahulu.')),
       );
       return;
     }
@@ -273,21 +347,24 @@ class _HomeScreenState extends State<HomeScreen> {
     final jobId = 'job-${DateTime.now().millisecondsSinceEpoch}';
 
     try {
-      // 1. Create GitHub Release
+      // 1. Create GitHub Release with Title and Description
       setState(() => _submitStep = '1/4 Membuat Release Job di GitHub...');
       final releaseId = await GitHubService.createRelease(
         repo: repo,
         token: token,
         tag: jobId,
-        title: 'Video Job: $jobId',
+        title: title,
+        body: description,
       );
 
       // 2. Upload Config JSON
       setState(() => _submitStep = '2/4 Mengunggah naskah & konfigurasi...');
       final configData = {
         'job_id': jobId,
-        'topic': text,
-        'script': text,
+        'topic': topic.isNotEmpty ? topic : title,
+        'title': title,
+        'description': description,
+        'script': script,
         'voice': _selectedVoice,
         'bgm': _selectedMusic,
         'gemini_api_key': geminiKey,
@@ -324,12 +401,14 @@ class _HomeScreenState extends State<HomeScreen> {
       // 5. Save Job to Local History
       final newJob = JobModel(
         id: jobId,
-        topic: text,
-        script: text,
+        topic: topic.isNotEmpty ? topic : title,
+        script: script,
         voice: _selectedVoice,
         status: 'rendering',
         localMediaPath: _selectedMedia!.path,
         createdAt: DateTime.now(),
+        videoTitle: title,
+        videoDescription: description,
       );
 
       final rawJobs = prefs.getStringList('jobs_history') ?? [];
@@ -344,7 +423,10 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         );
         // Reset form
-        _textController.clear();
+        _topicController.clear();
+        _titleController.clear();
+        _descController.clear();
+        _scriptController.clear();
         setState(() {
           _selectedMedia = null;
           _selectedMediaName = null;
@@ -374,17 +456,16 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Section 1: Ide / Naskah
+            // Section 1: Ide / Topik Utama
             const Text(
-              '1. Topik Konten atau Naskah Suara',
+              '1. Ide / Topik Utama Video',
               style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 6),
             TextField(
-              controller: _textController,
-              maxLines: 4,
+              controller: _topicController,
               decoration: InputDecoration(
-                hintText: 'Tulis naskah lengkap atau ketik topik singkat (Contoh: "5 Fakta Unik Tentang Kopi yang Jarang Diketahui Orang")',
+                hintText: 'Contoh: 5 Rahasia Kopi yang Jarang Diketahui Orang',
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                 filled: true,
                 fillColor: const Color(0xFF1E293B),
@@ -403,7 +484,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       )
                     : const Icon(Icons.auto_awesome, size: 18),
                 label: Text(
-                  _isGeneratingScript ? 'Menulis naskah dengan AI...' : '✨ Buat Naskah dengan AI (Gemini)',
+                  _isGeneratingScript ? 'Menulis naskah & judul...' : '✨ Buat Naskah, Judul & Deskripsi AI',
                   style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                 ),
                 style: ElevatedButton.styleFrom(
@@ -416,9 +497,121 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 18),
 
-            // Section 2: Pilihan Suara
+            // Section 2: Judul & Deskripsi Siap Upload
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0F172A),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.indigo.withOpacity(0.3)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.content_paste_go, color: Colors.indigoAccent, size: 18),
+                      const SizedBox(width: 8),
+                      const Text(
+                        '2. Judul, Deskripsi & Naskah Suara',
+                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Dibuat otomatis oleh AI atau ketik manual. Anda bisa langsung salin saat mau upload ke FB/YouTube.',
+                    style: TextStyle(fontSize: 12, color: Colors.grey[400]),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Judul Video
+                  Row(
+                    children: [
+                      const Text('Judul Video (YouTube / FB):', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                      const Spacer(),
+                      if (_titleController.text.isNotEmpty)
+                        TextButton.icon(
+                          onPressed: () => _copyText(_titleController.text, 'Judul'),
+                          icon: const Icon(Icons.copy, size: 14, color: Colors.indigoAccent),
+                          label: const Text('Salin', style: TextStyle(fontSize: 12, color: Colors.indigoAccent)),
+                          style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  TextField(
+                    controller: _titleController,
+                    decoration: InputDecoration(
+                      hintText: 'Judul memikat dengan hashtag (Contoh: 5 Rahasia Kopi! ☕🔥 #shorts)',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      filled: true,
+                      fillColor: const Color(0xFF1E293B),
+                      suffixIcon: IconButton(
+                        icon: const Icon(Icons.copy, size: 18, color: Colors.grey),
+                        onPressed: () => _copyText(_titleController.text, 'Judul'),
+                        tooltip: 'Salin Judul',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Deskripsi Video
+                  Row(
+                    children: [
+                      const Text('Deskripsi & Kumpulan Hashtag:', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                      const Spacer(),
+                      if (_descController.text.isNotEmpty)
+                        TextButton.icon(
+                          onPressed: () => _copyText(_descController.text, 'Deskripsi'),
+                          icon: const Icon(Icons.copy, size: 14, color: Colors.indigoAccent),
+                          label: const Text('Salin', style: TextStyle(fontSize: 12, color: Colors.indigoAccent)),
+                          style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  TextField(
+                    controller: _descController,
+                    maxLines: 3,
+                    decoration: InputDecoration(
+                      hintText: 'Deskripsi lengkap dan kumpulan hashtag viral (#shorts #reels #fbpro #viral)',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      filled: true,
+                      fillColor: const Color(0xFF1E293B),
+                      suffixIcon: IconButton(
+                        icon: const Icon(Icons.copy, size: 18, color: Colors.grey),
+                        onPressed: () => _copyText(_descController.text, 'Deskripsi'),
+                        tooltip: 'Salin Deskripsi',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Naskah Suara
+                  const Text(
+                    'Naskah Suara Narasi (Edge-TTS & Subtitle):',
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                  ),
+                  const SizedBox(height: 4),
+                  TextField(
+                    controller: _scriptController,
+                    maxLines: 4,
+                    decoration: InputDecoration(
+                      hintText: 'Teks yang akan dibacakan oleh AI dan muncul sebagai subtitle karaoke dinamis.',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      filled: true,
+                      fillColor: const Color(0xFF1E293B),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+
+            // Section 3: Pilihan Suara
             const Text(
-              '2. Pilih Karakter Suara AI (Edge-TTS)',
+              '3. Pilih Karakter Suara AI (Edge-TTS)',
               style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
@@ -450,9 +643,9 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 18),
 
-            // Section 3: Pilihan Musik Latar
+            // Section 4: Pilihan Musik Latar
             const Text(
-              '3. Pilih Musik Latar (BGM)',
+              '4. Pilih Musik Latar (BGM)',
               style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
@@ -489,9 +682,9 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 18),
 
-            // Section 4: Unggah Media (Foto / Video)
+            // Section 5: Unggah Media (Foto / Video)
             const Text(
-              '4. Latar Belakang (Foto atau Video dari HP Anda)',
+              '5. Latar Belakang (Foto atau Video dari HP Anda)',
               style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
