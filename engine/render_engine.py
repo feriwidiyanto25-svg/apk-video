@@ -235,7 +235,7 @@ def get_audio_duration(audio_path):
 def generate_blur_mask(mask_path, width=1080, height=1920):
     from PIL import Image
     log("Generating top & bottom cinema blur mask (1080x1920)...")
-    img = Image.new("L", (width, height))
+    img = Image.new("RGB", (width, height), (0, 0, 0))
     pixels = img.load()
     # Top (y < 420): full blur 255
     # Top fade (420 <= y < 560): fade from 255 to 0
@@ -253,8 +253,9 @@ def generate_blur_mask(mask_path, width=1080, height=1920):
             val = int(255 * ((y - 1360) / 140.0))
         else:
             val = 255
+        color = (val, val, val)
         for x in range(width):
-            pixels[x, y] = val
+            pixels[x, y] = color
     img.save(mask_path)
     log(f"Generated blur mask at {mask_path}")
 
@@ -289,18 +290,20 @@ def assemble_video(media_path, audio_path, ass_path, output_path, bgm_name="musi
     if is_image:
         log("Processing image with Top/Bottom Cinema Blur and Poppins subtitles...")
         v_filter = (
-            f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='min(zoom+0.0006,1.12)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=30[fg_sharp];"
-            f"[fg_sharp]boxblur=30:5[bg_blur];"
-            f"[2:v]scale=1080:1920[v_mask];"
+            f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='min(zoom+0.0006,1.12)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=30,setsar=1,format=yuv420p[v_scaled];"
+            f"[v_scaled]split=2[fg_sharp][fg_for_blur];"
+            f"[fg_for_blur]boxblur=30:5,format=yuv420p[bg_blur];"
+            f"[2:v]scale=1080:1920,setsar=1,format=yuv420p[v_mask];"
             f"[fg_sharp][bg_blur][v_mask]maskedmerge[v_merged];"
             f"[v_merged]subtitles='{escaped_ass}':fontsdir='fonts'[v]"
         )
     else:
         log("Processing video with Top/Bottom Cinema Blur and Poppins subtitles...")
         v_filter = (
-            f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920[fg_sharp];"
-            f"[fg_sharp]boxblur=30:5[bg_blur];"
-            f"[2:v]scale=1080:1920[v_mask];"
+            f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,format=yuv420p[v_scaled];"
+            f"[v_scaled]split=2[fg_sharp][fg_for_blur];"
+            f"[fg_for_blur]boxblur=30:5,format=yuv420p[bg_blur];"
+            f"[2:v]scale=1080:1920,setsar=1,format=yuv420p[v_mask];"
             f"[fg_sharp][bg_blur][v_mask]maskedmerge[v_merged];"
             f"[v_merged]subtitles='{escaped_ass}':fontsdir='fonts'[v]"
         )
