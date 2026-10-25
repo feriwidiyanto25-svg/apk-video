@@ -188,7 +188,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: ShortsStyle,Poppins Black,Arial Black,DejaVu Sans,125,&H0000F5FF,&H00FFFFFF,&H00000000,&HE0000000,1,0,0,0,100,100,0,0,1,8.0,4.0,2,40,40,840,1
+Style: ShortsStyle,Poppins Black,120,&H0000F5FF,&H00FFFFFF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,8.0,4.0,2,40,40,840,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -201,7 +201,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         if not chunk:
             continue
         line_start_ms = chunk[0]["start"]
-        line_end_ms = chunk[-1]["end"] + 120
+        if i + chunk_size < len(words):
+            next_start = words[i + chunk_size]["start"]
+            line_end_ms = min(chunk[-1]["end"] + 60, next_start)
+        else:
+            line_end_ms = chunk[-1]["end"] + 300
         
         start_str = format_ass_time(line_start_ms)
         end_str = format_ass_time(line_end_ms)
@@ -226,7 +230,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
     with open(ass_path, "w", encoding="utf-8") as f:
         f.write(header + "\n".join(dialogues) + "\n")
-    log(f"Subtitles created at {ass_path} (total {len(dialogues)} subtitle lines, Fontsize: 125, MarginV: 840)")
+    log(f"Subtitles created at {ass_path} (total {len(dialogues)} subtitle lines, Fontsize: 120, MarginV: 840)")
 
 def get_audio_duration(audio_path):
     cmd = [
