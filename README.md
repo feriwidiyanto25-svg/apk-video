@@ -82,3 +82,4 @@ Setelah aplikasi terpasang di HP Anda:
 6. Aplikasi akan mengunggah bahan mentah dan memicu GitHub Actions.
 7. Buka tab **Riwayat**: status video akan terpantau (*Sedang Merender di Cloud...* $\rightarrow$ *Selesai*).
 8. Ketuk video yang sudah selesai untuk **memutar pratinjau**, **menyimpan ke galeri HP**, atau **langsung membagikannya ke YouTube Shorts / Reels**.
+
