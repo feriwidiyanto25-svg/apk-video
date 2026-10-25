@@ -132,7 +132,7 @@ def generate_script_with_gemini(topic, gemini_api_key):
 async def generate_speech_and_subtitles(text, voice, audio_path, ass_path):
     import edge_tts
     log(f"Generating voiceover with voice: {voice}...")
-    communicate = edge_tts.Communicate(text, voice)
+    communicate = edge_tts.Communicate(text, voice, boundary="WordBoundary")
     
     words_data = []
     with open(audio_path, "wb") as f_audio:
@@ -140,7 +140,7 @@ async def generate_speech_and_subtitles(text, voice, audio_path, ass_path):
             if chunk["type"] == "audio":
                 f_audio.write(chunk["data"])
             elif chunk["type"] == "WordBoundary":
-                # Offset and duration are in 100-nanosecond units (1s = 10,000,000 units)
+                # Offset and duration are in ticks (1 tick = 100ns = 1/10000 ms)
                 start_ms = chunk["offset"] / 10000
                 duration_ms = chunk["duration"] / 10000
                 end_ms = start_ms + duration_ms
@@ -153,7 +153,7 @@ async def generate_speech_and_subtitles(text, voice, audio_path, ass_path):
                 })
 
     log(f"Voiceover saved to {audio_path}. Total words captured: {len(words_data)}")
-    create_karaoke_ass(words_data, ass_path, raw_text=text)
+    create_karaoke_ass(words_data, ass_path, raw_text=text, audio_path=audio_path)
 
 def format_ass_time(ms):
     hours = int(ms // 3600000)
@@ -162,19 +162,23 @@ def format_ass_time(ms):
     centis = int((ms % 1000) // 10)
     return f"{hours}:{mins:02d}:{secs:02d}.{centis:02d}"
 
-def create_karaoke_ass(words, ass_path, raw_text=""):
-    log("Creating dynamic karaoke subtitles (.ass) with Poppins Black...")
+def create_karaoke_ass(words, ass_path, raw_text="", audio_path=""):
+    log("Creating dynamic karaoke subtitles (.ass) with Poppins Black (Extra Large)...")
     
-    # Fallback timing if WordBoundary data was empty
+    # Fallback timing if WordBoundary data was empty: distribute words evenly across audio duration
     if not words and raw_text:
-        log("No WordBoundary data captured, generating fallback subtitle chunks...")
+        log("No WordBoundary data captured, generating duration-proportional subtitle chunks...")
         raw_words = [w.strip() for w in raw_text.split() if w.strip()]
-        cur_t = 200
+        total_audio_ms = 30000.0
+        if audio_path and os.path.exists(audio_path):
+            total_audio_ms = get_audio_duration(audio_path) * 1000.0
+        
+        word_dur = max(220.0, (total_audio_ms - 500.0) / max(1, len(raw_words)))
+        cur_t = 200.0
         words = []
         for rw in raw_words:
-            dur = 280
-            words.append({"word": rw, "start": cur_t, "end": cur_t + dur, "duration": dur})
-            cur_t += dur + 40
+            words.append({"word": rw, "start": cur_t, "end": cur_t + word_dur, "duration": word_dur})
+            cur_t += word_dur
 
     header = """[Script Info]
 ScriptType: v4.00+
@@ -184,7 +188,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: ShortsStyle,Poppins Black,96,&H0000F5FF,&H00FFFFFF,&H00000000,&HA0000000,1,0,0,0,100,100,0,0,1,7.0,3.0,2,40,40,620,1
+Style: ShortsStyle,Poppins Black,125,&H0000F5FF,&H00FFFFFF,&H00000000,&HE0000000,1,0,0,0,100,100,0,0,1,8.0,4.0,2,40,40,840,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -218,7 +222,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
     with open(ass_path, "w", encoding="utf-8") as f:
         f.write(header + "\n".join(dialogues) + "\n")
-    log(f"Subtitles created at {ass_path} (total {len(dialogues)} subtitle lines)")
+    log(f"Subtitles created at {ass_path} (total {len(dialogues)} subtitle lines, Fontsize: 125, MarginV: 840)")
 
 def get_audio_duration(audio_path):
     cmd = [
@@ -227,6 +231,32 @@ def get_audio_duration(audio_path):
     ]
     res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     return float(res.stdout.strip())
+
+def generate_blur_mask(mask_path, width=1080, height=1920):
+    from PIL import Image
+    log("Generating top & bottom cinema blur mask (1080x1920)...")
+    img = Image.new("L", (width, height))
+    pixels = img.load()
+    # Top (y < 420): full blur 255
+    # Top fade (420 <= y < 560): fade from 255 to 0
+    # Center (560 <= y < 1360): pure 0 (sharp clear original video & subtitles)
+    # Bottom fade (1360 <= y < 1500): fade from 0 to 255
+    # Bottom (y >= 1500): full blur 255
+    for y in range(height):
+        if y < 420:
+            val = 255
+        elif y < 560:
+            val = int(255 * (1.0 - (y - 420) / 140.0))
+        elif y < 1360:
+            val = 0
+        elif y < 1500:
+            val = int(255 * ((y - 1360) / 140.0))
+        else:
+            val = 255
+        for x in range(width):
+            pixels[x, y] = val
+    img.save(mask_path)
+    log(f"Generated blur mask at {mask_path}")
 
 def assemble_video(media_path, audio_path, ass_path, output_path, bgm_name="music1.mp3"):
     log(f"Assembling final 9:16 video with FFmpeg (BGM: {bgm_name})...")
@@ -238,6 +268,11 @@ def assemble_video(media_path, audio_path, ass_path, output_path, bgm_name="musi
 
     # Escape subtitle path for FFmpeg subtitles filter
     escaped_ass = ass_path.replace(":", "\\:").replace("'", "\\'")
+
+    # Generate Top & Bottom Blur Mask
+    work_dir = os.path.dirname(output_path)
+    mask_path = os.path.join(work_dir, "blur_mask.png")
+    generate_blur_mask(mask_path)
 
     # Check for Background Music file in repository
     bgm_path = None
@@ -252,29 +287,29 @@ def assemble_video(media_path, audio_path, ass_path, output_path, bgm_name="musi
     has_bgm = bgm_path is not None
 
     if is_image:
-        log("Processing image with Cinema Blur, Ken Burns effect, and Poppins subtitles...")
+        log("Processing image with Top/Bottom Cinema Blur and Poppins subtitles...")
         v_filter = (
-            f"[0:v]split=2[bg_raw][fg_raw];"
-            f"[bg_raw]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=25:5[bg_blur];"
-            f"[fg_raw]scale=1080:1920:force_original_aspect_ratio=decrease,zoompan=z='min(zoom+0.0006,1.12)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=30[fg_sharp];"
-            f"[bg_blur][fg_sharp]overlay=(W-w)/2:(H-h)/2[base_v];"
-            f"[base_v]subtitles='{escaped_ass}':fontsdir='fonts'[v]"
+            f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='min(zoom+0.0006,1.12)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=30[fg_sharp];"
+            f"[fg_sharp]boxblur=30:5[bg_blur];"
+            f"[2:v]scale=1080:1920[v_mask];"
+            f"[fg_sharp][bg_blur][v_mask]maskedmerge[v_merged];"
+            f"[v_merged]subtitles='{escaped_ass}':fontsdir='fonts'[v]"
         )
     else:
-        log("Processing video with Cinema Blur, sharp center, and Poppins subtitles...")
+        log("Processing video with Top/Bottom Cinema Blur and Poppins subtitles...")
         v_filter = (
-            f"[0:v]split=2[bg_raw][fg_raw];"
-            f"[bg_raw]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=25:5[bg_blur];"
-            f"[fg_raw]scale=1080:1920:force_original_aspect_ratio=decrease[fg_sharp];"
-            f"[bg_blur][fg_sharp]overlay=(W-w)/2:(H-h)/2[base_v];"
-            f"[base_v]subtitles='{escaped_ass}':fontsdir='fonts'[v]"
+            f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920[fg_sharp];"
+            f"[fg_sharp]boxblur=30:5[bg_blur];"
+            f"[2:v]scale=1080:1920[v_mask];"
+            f"[fg_sharp][bg_blur][v_mask]maskedmerge[v_merged];"
+            f"[v_merged]subtitles='{escaped_ass}':fontsdir='fonts'[v]"
         )
 
     input_args = ["-loop", "1"] if is_image else ["-stream_loop", "-1"]
 
     if has_bgm:
         a_filter = (
-            f"[2:a]aloop=loop=-1:size=2e+09,volume=0.13[bgm_loop];"
+            f"[3:a]aloop=loop=-1:size=2e+09,volume=0.13[bgm_loop];"
             f"[1:a]volume=1.0[voice];"
             f"[voice][bgm_loop]amix=inputs=2:duration=first:dropout_transition=2[a]"
         )
@@ -284,6 +319,8 @@ def assemble_video(media_path, audio_path, ass_path, output_path, bgm_name="musi
             *input_args,
             "-i", media_path,
             "-i", audio_path,
+            "-loop", "1",
+            "-i", mask_path,
             "-i", bgm_path,
             "-filter_complex", filter_complex,
             "-map", "[v]",
@@ -299,6 +336,8 @@ def assemble_video(media_path, audio_path, ass_path, output_path, bgm_name="musi
             *input_args,
             "-i", media_path,
             "-i", audio_path,
+            "-loop", "1",
+            "-i", mask_path,
             "-filter_complex", v_filter,
             "-map", "[v]",
             "-map", "1:a",

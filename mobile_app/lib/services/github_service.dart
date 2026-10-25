@@ -201,5 +201,25 @@ class GitHubService {
     }
     return results;
   }
+
+  /// Delete a release and its git tag from GitHub
+  static Future<void> deleteRelease({
+    required String repo,
+    required String token,
+    required String tag,
+  }) async {
+    try {
+      final getUrl = Uri.parse('$apiBase/repos/$repo/releases/tags/$tag');
+      final getRes = await http.get(getUrl, headers: _headers(token));
+      if (getRes.statusCode == 200) {
+        final data = jsonDecode(getRes.body);
+        final releaseId = data['id'];
+        final delUrl = Uri.parse('$apiBase/repos/$repo/releases/$releaseId');
+        await http.delete(delUrl, headers: _headers(token));
+      }
+      final tagUrl = Uri.parse('$apiBase/repos/$repo/git/refs/tags/$tag');
+      await http.delete(tagUrl, headers: _headers(token));
+    } catch (_) {}
+  }
 }
 

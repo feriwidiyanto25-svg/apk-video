@@ -63,10 +63,14 @@ class _JobsScreenState extends State<JobsScreen> {
     try {
       final cloudJobs = await GitHubService.fetchJobReleases(repo: repo, token: token);
       final existingIds = _jobs.map((j) => j.id).toSet();
+      final blacklist = (prefs.getStringList('deleted_jobs_blacklist') ?? []).toSet();
       bool hasChanges = false;
 
       for (var cj in cloudJobs) {
         final id = cj['id'] as String;
+        // Skip jobs that the user explicitly deleted
+        if (blacklist.contains(id)) continue;
+
         if (!existingIds.contains(id)) {
           _jobs.add(JobModel(
             id: id,
@@ -401,10 +405,48 @@ class _JobsScreenState extends State<JobsScreen> {
   }
 
   Future<void> _deleteJob(int index) async {
+    final job = _jobs[index];
+    final jobId = job.id;
+
+    // 1. Remove from active UI list & local jobs history
     setState(() {
       _jobs.removeAt(index);
     });
     await _saveJobs();
+
+    // 2. Add to deleted blacklist in SharedPreferences so sync never restores it
+    final prefs = await SharedPreferences.getInstance();
+    final blacklist = prefs.getStringList('deleted_jobs_blacklist') ?? [];
+    if (!blacklist.contains(jobId)) {
+      blacklist.add(jobId);
+      await prefs.setStringList('deleted_jobs_blacklist', blacklist);
+    }
+
+    // 3. Delete locally cached MP4 file if exists
+    if (job.localVideoPath != null) {
+      final f = File(job.localVideoPath!);
+      if (f.existsSync()) {
+        try {
+          f.deleteSync();
+        } catch (_) {}
+      }
+    }
+
+    // 4. Delete the Release & Tag on GitHub cloud
+    final repo = prefs.getString('github_repo') ?? '';
+    final token = prefs.getString('github_token') ?? '';
+    if (repo.isNotEmpty && token.isNotEmpty) {
+      GitHubService.deleteRelease(repo: repo, token: token, tag: jobId);
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Video berhasil dihapus permanen.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   @override
