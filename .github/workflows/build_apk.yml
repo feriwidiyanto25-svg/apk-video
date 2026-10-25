@@ -33,9 +33,10 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Accept Android SDK Licenses
+      - name: Accept Android SDK Licenses & Install SDK 36
         run: |
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-36" || true
 
       - name: Generate Canonical Android Scaffold
         working-directory: mobile_app
@@ -51,15 +52,15 @@ jobs:
               if os.path.exists(path):
                   with open(path, 'r') as f:
                       content = f.read()
-                  content = re.sub(r'compileSdk\s*=\s*flutter\.compileSdkVersion', 'compileSdk = 35', content)
-                  content = re.sub(r'compileSdkVersion\s+flutter\.compileSdkVersion', 'compileSdkVersion 35', content)
-                  content = re.sub(r'targetSdk\s*=\s*flutter\.targetSdkVersion', 'targetSdk = 35', content)
-                  content = re.sub(r'targetSdkVersion\s+flutter\.targetSdkVersion', 'targetSdkVersion 35', content)
-                  content = re.sub(r'minSdk\s*=\s*flutter\.minSdkVersion', 'minSdk = 21', content)
-                  content = re.sub(r'minSdkVersion\s+flutter\.minSdkVersion', 'minSdkVersion 21', content)
+                  content = re.sub(r'compileSdk\s*=\s*(flutter\.compileSdkVersion|\d+)', 'compileSdk = 36', content)
+                  content = re.sub(r'compileSdkVersion\s+(flutter\.compileSdkVersion|\d+)', 'compileSdkVersion 36', content)
+                  content = re.sub(r'targetSdk\s*=\s*(flutter\.targetSdkVersion|\d+)', 'targetSdk = 35', content)
+                  content = re.sub(r'targetSdkVersion\s+(flutter\.targetSdkVersion|\d+)', 'targetSdkVersion 35', content)
+                  content = re.sub(r'minSdk\s*=\s*(flutter\.minSdkVersion|\d+)', 'minSdk = 21', content)
+                  content = re.sub(r'minSdkVersion\s+(flutter\.minSdkVersion|\d+)', 'minSdkVersion 21', content)
                   with open(path, 'w') as f:
                       f.write(content)
-                  print(f'Configured {path} with SDK 35')
+                  print(f'Configured {path} with SDK 36')
 
           manifest_path = 'android/app/src/main/AndroidManifest.xml'
           if os.path.exists(manifest_path):
