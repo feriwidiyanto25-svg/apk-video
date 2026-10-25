@@ -33,9 +33,10 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Accept Android SDK Licenses
+      - name: Accept Android SDK Licenses & Setup Platforms
         run: |
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-36" "platforms;android-35" || true
 
       - name: Generate Canonical Android Scaffold
         working-directory: mobile_app
@@ -45,27 +46,52 @@ jobs:
           python3 -c "
           import os, re
 
-          # Support both Groovy (.gradle) and Kotlin DSL (.gradle.kts)
-          candidates = ['android/app/build.gradle.kts', 'android/app/build.gradle']
-          for path in candidates:
-              if os.path.exists(path):
-                  with open(path, 'r') as f:
-                      content = f.read()
-                  content = re.sub(r'compileSdk\s*=\s*(flutter\.compileSdkVersion|\d+)', 'compileSdk = 35', content)
-                  content = re.sub(r'compileSdkVersion\s+(flutter\.compileSdkVersion|\d+)', 'compileSdkVersion 35', content)
-                  content = re.sub(r'targetSdk\s*=\s*(flutter\.targetSdkVersion|\d+)', 'targetSdk = 35', content)
-                  content = re.sub(r'targetSdkVersion\s+(flutter\.targetSdkVersion|\d+)', 'targetSdkVersion 35', content)
-                  content = re.sub(r'minSdk\s*=\s*(flutter\.minSdkVersion|\d+)', 'minSdk = 21', content)
-                  content = re.sub(r'minSdkVersion\s+(flutter\.minSdkVersion|\d+)', 'minSdkVersion 21', content)
+          kts_path = 'android/app/build.gradle.kts'
+          if os.path.exists(kts_path):
+              with open(kts_path, 'r') as f:
+                  content = f.read()
+              content = re.sub(r'compileSdk\s*=\s*(flutter\.compileSdkVersion|\d+)', 'compileSdk = 36', content)
+              content = re.sub(r'targetSdk\s*=\s*(flutter\.targetSdkVersion|\d+)', 'targetSdk = 35', content)
+              content = re.sub(r'minSdk\s*=\s*(flutter\.minSdkVersion|\d+)', 'minSdk = 21', content)
+              disable_code = '''
+tasks.withType<com.android.build.gradle.tasks.CheckAarMetadata> {
+    enabled = false
+}
+afterEvaluate {
+    tasks.matching { it.name.contains(\"AarMetadata\") }.configureEach {
+        enabled = false
+    }
+}
+'''
+              if 'CheckAarMetadata' not in content:
+                  content += '\n' + disable_code
+              with open(kts_path, 'w') as f:
+                  f.write(content)
+              print('Configured build.gradle.kts with compileSdk 36 and disabled CheckAarMetadata')
 
-                  # Disable checkReleaseAarMetadata to bypass premature minCompileSdk 36 check
-                  disable_check = '\n\ntasks.configureEach {\n    if (name.contains(\"AarMetadata\")) {\n        enabled = false\n    }\n}\n'
-                  if 'AarMetadata' not in content:
-                      content += disable_check
-
-                  with open(path, 'w') as f:
-                      f.write(content)
-                  print(f'Configured {path} with SDK 35 and disabled AarMetadata check')
+          groovy_path = 'android/app/build.gradle'
+          if os.path.exists(groovy_path):
+              with open(groovy_path, 'r') as f:
+                  content = f.read()
+              content = re.sub(r'compileSdk\s*=\s*(flutter\.compileSdkVersion|\d+)', 'compileSdk = 36', content)
+              content = re.sub(r'compileSdkVersion\s+(flutter\.compileSdkVersion|\d+)', 'compileSdkVersion 36', content)
+              content = re.sub(r'targetSdk\s*=\s*(flutter\.targetSdkVersion|\d+)', 'targetSdk = 35', content)
+              content = re.sub(r'minSdk\s*=\s*(flutter\.minSdkVersion|\d+)', 'minSdk = 21', content)
+              disable_code = '''
+tasks.withType(com.android.build.gradle.tasks.CheckAarMetadata) {
+    enabled = false
+}
+afterEvaluate {
+    tasks.matching { it.name.contains(\"AarMetadata\") }.configureEach {
+        enabled = false
+    }
+}
+'''
+              if 'CheckAarMetadata' not in content:
+                  content += '\n' + disable_code
+              with open(groovy_path, 'w') as f:
+                  f.write(content)
+              print('Configured build.gradle with compileSdk 36 and disabled CheckAarMetadata')
 
           manifest_path = 'android/app/src/main/AndroidManifest.xml'
           if os.path.exists(manifest_path):
