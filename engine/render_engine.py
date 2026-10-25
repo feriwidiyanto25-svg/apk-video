@@ -270,6 +270,8 @@ def assemble_video(media_path, audio_path, ass_path, output_path, bgm_name="musi
             f"[base_v]subtitles='{escaped_ass}':fontsdir='fonts'[v]"
         )
 
+    input_args = ["-loop", "1"] if is_image else ["-stream_loop", "-1"]
+
     if has_bgm:
         a_filter = (
             f"[2:a]aloop=loop=-1:size=2e+09,volume=0.13[bgm_loop];"
@@ -279,8 +281,7 @@ def assemble_video(media_path, audio_path, ass_path, output_path, bgm_name="musi
         filter_complex = f"{v_filter};{a_filter}"
         cmd = [
             "ffmpeg", "-y",
-            "-loop", "1" if is_image else None,
-            "-stream_loop", "-1" if not is_image else None,
+            *input_args,
             "-i", media_path,
             "-i", audio_path,
             "-i", bgm_path,
@@ -292,12 +293,10 @@ def assemble_video(media_path, audio_path, ass_path, output_path, bgm_name="musi
             "-t", str(duration),
             output_path
         ]
-        cmd = [c for c in cmd if c is not None]
     else:
         cmd = [
             "ffmpeg", "-y",
-            "-loop", "1" if is_image else None,
-            "-stream_loop", "-1" if not is_image else None,
+            *input_args,
             "-i", media_path,
             "-i", audio_path,
             "-filter_complex", v_filter,
@@ -308,7 +307,6 @@ def assemble_video(media_path, audio_path, ass_path, output_path, bgm_name="musi
             "-t", str(duration),
             output_path
         ]
-        cmd = [c for c in cmd if c is not None]
 
     log(f"Running command: {' '.join(cmd)}")
     result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
