@@ -45,23 +45,6 @@ allprojects {
     }
 }
 
-subprojects {
-    plugins.whenPluginAdded { plugin ->
-        if (plugin.javaClass.name.contains("com.android.build.gradle")) {
-            val androidExt = project.extensions.findByName("android")
-            if (androidExt != null) {
-                try {
-                    androidExt.javaClass.getMethod("compileSdkVersion", Int::class.javaPrimitiveType).invoke(androidExt, 36)
-                } catch (e: Exception) {
-                    try {
-                        androidExt.javaClass.getMethod("setCompileSdkVersion", Int::class.javaPrimitiveType).invoke(androidExt, 36)
-                    } catch (e2: Exception) {}
-                }
-            }
-        }
-    }
-}
-
 gradle.taskGraph.whenReady {
     allTasks.forEach { task ->
         if (task.name.contains("AarMetadata", ignoreCase = true)) {
@@ -74,7 +57,7 @@ gradle.taskGraph.whenReady {
             content += '\n' + subproject_fix_kts
             with open(root_kts, 'w', encoding='utf-8') as f:
                 f.write(content)
-            print('[CONFIGURE] Added AarMetadata bypass and subproject compileSdk 36 in root build.gradle.kts')
+            print('[CONFIGURE] Added AarMetadata bypass in root build.gradle.kts')
 
     # 4. Patch root-level Groovy DSL (android/build.gradle)
     root_groovy = 'android/build.gradle'
@@ -86,18 +69,6 @@ allprojects {
     tasks.configureEach { task ->
         if (task.name.contains("AarMetadata")) {
             task.enabled = false
-        }
-    }
-}
-
-subprojects {
-    project.plugins.whenPluginAdded { plugin ->
-        if (plugin.class.name.contains("com.android.build.gradle")) {
-            try {
-                project.android {
-                    compileSdkVersion 36
-                }
-            } catch (Exception e) {}
         }
     }
 }
@@ -114,7 +85,7 @@ gradle.taskGraph.whenReady {
             content += '\n' + subproject_fix_groovy
             with open(root_groovy, 'w', encoding='utf-8') as f:
                 f.write(content)
-            print('[CONFIGURE] Added AarMetadata bypass and subproject compileSdk 36 in root build.gradle')
+            print('[CONFIGURE] Added AarMetadata bypass in root build.gradle')
 
     # 5. Patch gradle.properties
     gradle_props = 'android/gradle.properties'
@@ -178,12 +149,17 @@ def patch_pub_cache():
                             modified = True
                             content = new_content
 
+                        # Disable AarMetadata tasks directly in plugin build file
+                        if file == 'build.gradle' and 'AarMetadata' not in content:
+                            content += '\n\ntasks.configureEach { task -> if (task.name.contains("AarMetadata")) { task.enabled = false } }\n'
+                            modified = True
+
                         if modified:
                             with open(file_path, 'w', encoding='utf-8') as f:
                                 f.write(content)
                             patched_count += 1
                             plugin_name = os.path.basename(os.path.dirname(os.path.dirname(file_path)))
-                            print(f"[CONFIGURE] Patched {plugin_name} to compileSdk 36")
+                            print(f"[CONFIGURE] Patched {plugin_name} in pub-cache")
                     except Exception as e:
                         pass
     print(f"[CONFIGURE] Total pub-cache plugins patched: {patched_count}")
