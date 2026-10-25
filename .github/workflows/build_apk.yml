@@ -43,11 +43,14 @@ jobs:
         run: |
           rm -rf android
           flutter create . --org com.creator --project-name shorts_creator --platforms=android
-          python3 configure_android.py
 
       - name: Get Flutter Dependencies
         working-directory: mobile_app
         run: flutter pub get
+
+      - name: Configure Android Project & Plugins
+        working-directory: mobile_app
+        run: python3 configure_android.py
 
       - name: Build Android APK (Release)
         working-directory: mobile_app
