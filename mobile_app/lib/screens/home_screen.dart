@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
 import '../models/job_model.dart';
 import '../services/github_service.dart';
 
@@ -19,11 +20,13 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _textController = TextEditingController();
   String _selectedVoice = 'id-ID-GadisNeural';
+  String _selectedMusic = 'music1.mp3';
   File? _selectedMedia;
   String? _selectedMediaName;
   int _selectedMediaSize = 0;
   bool _isImage = true;
   bool _isSubmitting = false;
+  bool _isGeneratingScript = false;
   String _submitStep = '';
 
   final List<Map<String, String>> _voices = [
@@ -36,6 +39,39 @@ class _HomeScreenState extends State<HomeScreen> {
       'id': 'id-ID-ArdiNeural',
       'name': 'Ardi (Laki-laki)',
       'desc': 'Suara berwibawa, tegas, cocok untuk berita, misteri, motivasi'
+    },
+  ];
+
+  final List<Map<String, String>> _musicList = [
+    {
+      'id': 'music1.mp3',
+      'name': '🎵 Musik 1 - Santai / Chill',
+      'desc': 'Cocok untuk edukasi, cerita inspiratif, & fakta menarik',
+    },
+    {
+      'id': 'music5.mp3',
+      'name': '⚡ Musik 2 - Upbeat / Energik',
+      'desc': 'Cocok untuk tips & trik, hiburan, & video seru',
+    },
+    {
+      'id': 'music6.mp3',
+      'name': '🕵️ Musik 3 - Misteri / Suspense',
+      'desc': 'Cocok untuk misteri, konspirasi, & dark facts',
+    },
+    {
+      'id': 'music7.mp3',
+      'name': '🎬 Musik 4 - Sinematik / Emosional',
+      'desc': 'Cocok untuk momen penting, sejarah, & drama',
+    },
+    {
+      'id': 'music8.mp3',
+      'name': '🚀 Musik 5 - Inspiratif / Motivasi',
+      'desc': 'Cocok untuk motivasi bisnis, sukses, & cerita epik',
+    },
+    {
+      'id': 'none',
+      'name': '🔇 Tanpa Musik (Hanya Narasi)',
+      'desc': 'Hanya suara narasi tanpa musik latar',
     },
   ];
 
@@ -69,6 +105,131 @@ class _HomeScreenState extends State<HomeScreen> {
         _selectedMediaSize = size;
         _isImage = ['jpg', 'jpeg', 'png', 'webp'].contains(ext);
       });
+    }
+  }
+
+  Future<void> _generateScriptWithGemini() async {
+    final topic = _textController.text.trim();
+    if (topic.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Ketik ide atau topik singkat terlebih dahulu di kolom teks!'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    final geminiKey = prefs.getString('gemini_api_key') ?? '';
+
+    if (geminiKey.isEmpty) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.key, color: Colors.amber),
+              SizedBox(width: 8),
+              Text('Gemini API Key Diperlukan'),
+            ],
+          ),
+          content: const Text(
+            'Untuk membuat naskah otomatis dengan AI, harap masukkan Google Gemini API Key gratis Anda di tab Pengaturan.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Batal'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                widget.onTabSwitch(2); // Go to settings tab
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+              child: const Text('Ke Pengaturan', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isGeneratingScript = true);
+
+    try {
+      final promptText = 'Buatkan naskah video pendek (YouTube Shorts / TikTok / Reels) berdurasi 30-45 detik mengenai topik berikut:\n'
+          '"$topic"\n\n'
+          'Aturan Penting:\n'
+          '1. Gunakan Bahasa Indonesia yang santai, memikat, dan memiliki HOOK rasa penasaran yang kuat di 3 detik pertama.\n'
+          '2. Jangan gunakan tanda kurung, instruksi visual, intro klise seperti "Halo guys", atau emoji.\n'
+          '3. Tuliskan HANYA kata-kata yang akan diucapkan narator secara langsung (voiceover only).\n'
+          '4. Panjang naskah 60-80 kata.';
+
+      final models = ['gemini-1.5-flash', 'gemini-2.0-flash'];
+      String? generatedScript;
+      String? errorMsg;
+
+      for (var model in models) {
+        try {
+          final url = Uri.parse('https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$geminiKey');
+          final response = await http.post(
+            url,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'contents': [
+                {
+                  'parts': [
+                    {'text': promptText}
+                  ]
+                }
+              ]
+            }),
+          );
+
+          if (response.statusCode == 200) {
+            final data = jsonDecode(response.body);
+            generatedScript = data['candidates'][0]['content']['parts'][0]['text']?.toString().trim();
+            if (generatedScript != null && generatedScript.isNotEmpty) {
+              break;
+            }
+          } else {
+            errorMsg = '(${response.statusCode}): ${response.body}';
+          }
+        } catch (e) {
+          errorMsg = e.toString();
+        }
+      }
+
+      if (generatedScript != null && generatedScript.isNotEmpty) {
+        setState(() {
+          _textController.text = generatedScript!;
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✨ Naskah berhasil dibuat oleh Gemini! Anda dapat membacanya atau mengeditnya.'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } else {
+        throw Exception('Gagal membuat naskah: $errorMsg');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal membuat naskah AI: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isGeneratingScript = false);
+      }
     }
   }
 
@@ -128,6 +289,7 @@ class _HomeScreenState extends State<HomeScreen> {
         'topic': text,
         'script': text,
         'voice': _selectedVoice,
+        'bgm': _selectedMusic,
         'gemini_api_key': geminiKey,
       };
       final configBytes = Uint8List.fromList(utf8.encode(jsonEncode(configData)));
@@ -228,6 +390,30 @@ class _HomeScreenState extends State<HomeScreen> {
                 fillColor: const Color(0xFF1E293B),
               ),
             ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: ElevatedButton.icon(
+                onPressed: _isGeneratingScript ? null : _generateScriptWithGemini,
+                icon: _isGeneratingScript
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.auto_awesome, size: 18),
+                label: Text(
+                  _isGeneratingScript ? 'Menulis naskah dengan AI...' : '✨ Buat Naskah dengan AI (Gemini)',
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF6366F1), // Indigo
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                ),
+              ),
+            ),
             const SizedBox(height: 18),
 
             // Section 2: Pilihan Suara
@@ -264,9 +450,48 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 18),
 
-            // Section 3: Unggah Media (Foto / Video)
+            // Section 3: Pilihan Musik Latar
             const Text(
-              '3. Latar Belakang (Foto atau Video dari HP Anda)',
+              '3. Pilih Musik Latar (BGM)',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E293B),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.white12),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: _selectedMusic,
+                  isExpanded: true,
+                  dropdownColor: const Color(0xFF1E293B),
+                  items: _musicList.map((m) {
+                    return DropdownMenuItem<String>(
+                      value: m['id'],
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(m['name']!, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                          Text(m['desc']!, style: TextStyle(fontSize: 11, color: Colors.grey[400])),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                  onChanged: (val) {
+                    if (val != null) setState(() => _selectedMusic = val);
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+
+            // Section 4: Unggah Media (Foto / Video)
+            const Text(
+              '4. Latar Belakang (Foto atau Video dari HP Anda)',
               style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
@@ -378,4 +603,3 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
-

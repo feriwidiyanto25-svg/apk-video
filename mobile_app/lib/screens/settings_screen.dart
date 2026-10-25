@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -13,6 +15,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _repoController = TextEditingController();
   final _geminiKeyController = TextEditingController();
   bool _isLoading = true;
+  bool _isTestingToken = false;
 
   @override
   void initState() {
@@ -24,7 +27,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _tokenController.text = prefs.getString('github_token') ?? '';
-      _repoController.text = prefs.getString('github_repo') ?? '';
+      _repoController.text = prefs.getString('github_repo') ?? 'feriwidiyanto25-svg/apk-video';
       _geminiKeyController.text = prefs.getString('gemini_api_key') ?? '';
       _isLoading = false;
     });
@@ -43,6 +46,63 @@ class _SettingsScreenState extends State<SettingsScreen> {
           backgroundColor: Colors.green,
         ),
       );
+    }
+  }
+
+  Future<void> _testGitHubConnection() async {
+    final token = _tokenController.text.trim();
+    if (token.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Masukkan kode token terlebih dahulu.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isTestingToken = true);
+    try {
+      final res = await http.get(
+        Uri.parse('https://api.github.com/user'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/vnd.github+json',
+        },
+      );
+
+      if (mounted) {
+        if (res.statusCode == 200) {
+          final data = jsonDecode(res.body);
+          final login = data['login'] ?? 'GitHub User';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('✅ Token Valid! Terhubung sebagai @$login'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('❌ Token Ditolak (${res.statusCode}). Periksa apakah token diawali ghp_ dan izin repo dicentang.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal menghubungi GitHub: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isTestingToken = false);
+      }
     }
   }
 
@@ -71,7 +131,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             TextField(
               controller: _repoController,
               decoration: const InputDecoration(
-                hintText: 'contoh: username-anda/apk-video',
+                hintText: 'contoh: feriwidiyanto25-svg/apk-video',
                 border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.folder_shared),
               ),
@@ -91,12 +151,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 prefixIcon: Icon(Icons.key),
               ),
             ),
-            const SizedBox(height: 6),
-            const Text(
-              'Token butuh izin: repo dan workflow.',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
+            const SizedBox(height: 4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Izin wajib: repo dan workflow',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                TextButton.icon(
+                  onPressed: _isTestingToken ? null : _testGitHubConnection,
+                  icon: _isTestingToken
+                      ? const SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.verified, size: 16, color: Colors.blueAccent),
+                  label: const Text('Tes Token', style: TextStyle(fontSize: 12)),
+                ),
+              ],
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 14),
             const Text(
               '3. Google Gemini API Key (Opsional)',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
@@ -113,7 +189,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const SizedBox(height: 6),
             const Text(
-              'Digunakan jika Anda ingin AI otomatis membuat naskah dari topik.',
+              'Digunakan untuk membuat naskah video otomatis dari ide/topik.',
               style: TextStyle(fontSize: 12, color: Colors.grey),
             ),
             const SizedBox(height: 30),
@@ -137,4 +213,3 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 }
-
