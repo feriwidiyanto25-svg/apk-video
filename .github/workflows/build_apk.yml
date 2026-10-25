@@ -43,25 +43,38 @@ jobs:
           rm -rf android
           flutter create . --org com.creator --project-name shorts_creator --platforms=android
           python3 -c "
-          import re
-          with open('android/app/build.gradle', 'r') as f:
-              c = f.read()
-          c = re.sub(r'compileSdk\s*=\s*flutter\.compileSdkVersion', 'compileSdk = 35', c)
-          c = re.sub(r'compileSdkVersion\s+flutter\.compileSdkVersion', 'compileSdkVersion 35', c)
-          c = re.sub(r'targetSdk\s*=\s*flutter\.targetSdkVersion', 'targetSdk = 35', c)
-          c = re.sub(r'targetSdkVersion\s+flutter\.targetSdkVersion', 'targetSdkVersion 35', c)
-          c = re.sub(r'minSdk\s*=\s*flutter\.minSdkVersion', 'minSdk = 21', c)
-          c = re.sub(r'minSdkVersion\s+flutter\.minSdkVersion', 'minSdkVersion 21', c)
-          with open('android/app/build.gradle', 'w') as f:
-              f.write(c)
+          import os, re
 
-          with open('android/app/src/main/AndroidManifest.xml', 'r') as f:
-              m = f.read()
-          perms = '    <uses-permission android:name=\"android.permission.INTERNET\"/>\n    <uses-permission android:name=\"android.permission.READ_EXTERNAL_STORAGE\"/>\n    <uses-permission android:name=\"android.permission.WRITE_EXTERNAL_STORAGE\"/>\n'
-          if '<uses-permission' not in m:
-              m = m.replace('<application', perms + '    <application')
-              with open('android/app/src/main/AndroidManifest.xml', 'w') as f:
-                  f.write(m)
+          # Support both Groovy (.gradle) and Kotlin DSL (.gradle.kts)
+          candidates = ['android/app/build.gradle.kts', 'android/app/build.gradle']
+          for path in candidates:
+              if os.path.exists(path):
+                  with open(path, 'r') as f:
+                      content = f.read()
+                  content = re.sub(r'compileSdk\s*=\s*flutter\.compileSdkVersion', 'compileSdk = 35', content)
+                  content = re.sub(r'compileSdkVersion\s+flutter\.compileSdkVersion', 'compileSdkVersion 35', content)
+                  content = re.sub(r'targetSdk\s*=\s*flutter\.targetSdkVersion', 'targetSdk = 35', content)
+                  content = re.sub(r'targetSdkVersion\s+flutter\.targetSdkVersion', 'targetSdkVersion 35', content)
+                  content = re.sub(r'minSdk\s*=\s*flutter\.minSdkVersion', 'minSdk = 21', content)
+                  content = re.sub(r'minSdkVersion\s+flutter\.minSdkVersion', 'minSdkVersion 21', content)
+                  with open(path, 'w') as f:
+                      f.write(content)
+                  print(f'Configured {path} with SDK 35')
+
+          manifest_path = 'android/app/src/main/AndroidManifest.xml'
+          if os.path.exists(manifest_path):
+              with open(manifest_path, 'r') as f:
+                  manifest = f.read()
+              perms = (
+                  '    <uses-permission android:name=\"android.permission.INTERNET\"/>\n'
+                  '    <uses-permission android:name=\"android.permission.READ_EXTERNAL_STORAGE\"/>\n'
+                  '    <uses-permission android:name=\"android.permission.WRITE_EXTERNAL_STORAGE\"/>\n'
+              )
+              if '<uses-permission' not in manifest:
+                  manifest = manifest.replace('<application', perms + '    <application')
+                  with open(manifest_path, 'w') as f:
+                      f.write(manifest)
+                  print('Added permissions to AndroidManifest.xml')
           "
 
       - name: Get Flutter Dependencies
