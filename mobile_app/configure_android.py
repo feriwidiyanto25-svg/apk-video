@@ -12,23 +12,10 @@ def configure():
         content = re.sub(r'compileSdk\s*=\s*(flutter\.compileSdkVersion|\d+)', 'compileSdk = 36', content)
         content = re.sub(r'targetSdk\s*=\s*(flutter\.targetSdkVersion|\d+)', 'targetSdk = 35', content)
         content = re.sub(r'minSdk\s*=\s*(flutter\.minSdkVersion|\d+)', 'minSdk = 21', content)
-        
-        disable_check = """
-tasks.withType<com.android.build.gradle.tasks.CheckAarMetadata> {
-    enabled = false
-}
-afterEvaluate {
-    tasks.matching { it.name.contains("AarMetadata") }.configureEach {
-        enabled = false
-    }
-}
-"""
-        if 'CheckAarMetadata' not in content:
-            content += '\n' + disable_check
             
         with open(kts_path, 'w', encoding='utf-8') as f:
             f.write(content)
-        print('[CONFIGURE] Successfully patched android/app/build.gradle.kts')
+        print('[CONFIGURE] Successfully set compileSdk = 36 in android/app/build.gradle.kts')
 
     # 2. Handle Groovy DSL (build.gradle)
     groovy_path = 'android/app/build.gradle'
@@ -39,23 +26,10 @@ afterEvaluate {
         content = re.sub(r'compileSdkVersion\s+(flutter\.compileSdkVersion|\d+)', 'compileSdkVersion 36', content)
         content = re.sub(r'targetSdk\s*=\s*(flutter\.targetSdkVersion|\d+)', 'targetSdk = 35', content)
         content = re.sub(r'minSdk\s*=\s*(flutter\.minSdkVersion|\d+)', 'minSdk = 21', content)
-        
-        disable_check = """
-tasks.withType(com.android.build.gradle.tasks.CheckAarMetadata) {
-    enabled = false
-}
-afterEvaluate {
-    tasks.matching { it.name.contains("AarMetadata") }.configureEach {
-        enabled = false
-    }
-}
-"""
-        if 'CheckAarMetadata' not in content:
-            content += '\n' + disable_check
             
         with open(groovy_path, 'w', encoding='utf-8') as f:
             f.write(content)
-        print('[CONFIGURE] Successfully patched android/app/build.gradle')
+        print('[CONFIGURE] Successfully set compileSdk = 36 in android/app/build.gradle')
 
     # 3. Add Android permissions
     manifest_path = 'android/app/src/main/AndroidManifest.xml'
