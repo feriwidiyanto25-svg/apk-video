@@ -2,7 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
-import 'package:gal/gal.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 class PlayerScreen extends StatefulWidget {
@@ -61,19 +61,28 @@ class _PlayerScreenState extends State<PlayerScreen> {
     super.dispose();
   }
 
-  Future<void> _saveToGallery() async {
+  Future<void> _saveVideo() async {
     setState(() => _isSaving = true);
     try {
-      final hasAccess = await Gal.hasAccess();
-      if (!hasAccess) {
-        await Gal.requestAccess();
+      Directory? targetDir;
+      if (Platform.isAndroid) {
+        final extDirs = await getExternalStorageDirectories(type: StorageDirectory.movies);
+        if (extDirs != null && extDirs.isNotEmpty) {
+          targetDir = extDirs.first;
+        }
       }
-      await Gal.putVideo(widget.videoPath);
+      targetDir ??= await getApplicationDocumentsDirectory();
+
+      final fileName = 'Shorts_${DateTime.now().millisecondsSinceEpoch}.mp4';
+      final targetFile = File('${targetDir.path}/$fileName');
+      await File(widget.videoPath).copy(targetFile.path);
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Berhasil disimpan ke Galeri HP!'),
+          SnackBar(
+            content: Text('Video berhasil disimpan: $fileName'),
             backgroundColor: Colors.green,
+            duration: const Duration(seconds: 4),
           ),
         );
       }
@@ -81,7 +90,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Gagal menyimpan ke galeri: $e'),
+            content: Text('Gagal menyimpan video: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -135,7 +144,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 children: [
                   Expanded(
                     child: ElevatedButton.icon(
-                      onPressed: _isSaving ? null : _saveToGallery,
+                      onPressed: _isSaving ? null : _saveVideo,
                       icon: _isSaving
                           ? const SizedBox(
                               width: 18,
@@ -143,7 +152,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const Icon(Icons.download),
-                      label: const Text('Simpan ke Galeri'),
+                      label: const Text('Simpan Video'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.green[700],
                         foregroundColor: Colors.white,
@@ -173,4 +182,3 @@ class _PlayerScreenState extends State<PlayerScreen> {
     );
   }
 }
-
