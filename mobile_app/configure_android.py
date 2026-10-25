@@ -31,70 +31,14 @@ def configure():
             f.write(content)
         print('[CONFIGURE] Set compileSdk = 36 in app/build.gradle')
 
-    # 3. Patch root-level Kotlin DSL (android/build.gradle.kts)
-    root_kts = 'android/build.gradle.kts'
-    if os.path.exists(root_kts):
-        with open(root_kts, 'r', encoding='utf-8') as f:
-            content = f.read()
-        subproject_fix_kts = """
-allprojects {
-    tasks.configureEach {
-        if (name.contains("AarMetadata", ignoreCase = true)) {
-            enabled = false
-        }
-    }
-}
-
-gradle.taskGraph.whenReady {
-    allTasks.forEach { task ->
-        if (task.name.contains("AarMetadata", ignoreCase = true)) {
-            task.enabled = false
-        }
-    }
-}
-"""
-        if 'AarMetadata' not in content:
-            content += '\n' + subproject_fix_kts
-            with open(root_kts, 'w', encoding='utf-8') as f:
-                f.write(content)
-            print('[CONFIGURE] Added AarMetadata bypass in root build.gradle.kts')
-
-    # 4. Patch root-level Groovy DSL (android/build.gradle)
-    root_groovy = 'android/build.gradle'
-    if os.path.exists(root_groovy):
-        with open(root_groovy, 'r', encoding='utf-8') as f:
-            content = f.read()
-        subproject_fix_groovy = """
-allprojects {
-    tasks.configureEach { task ->
-        if (task.name.contains("AarMetadata")) {
-            task.enabled = false
-        }
-    }
-}
-
-gradle.taskGraph.whenReady {
-    allTasks.each { task ->
-        if (task.name.contains("AarMetadata")) {
-            task.enabled = false
-        }
-    }
-}
-"""
-        if 'AarMetadata' not in content:
-            content += '\n' + subproject_fix_groovy
-            with open(root_groovy, 'w', encoding='utf-8') as f:
-                f.write(content)
-            print('[CONFIGURE] Added AarMetadata bypass in root build.gradle')
-
-    # 5. Patch gradle.properties
+    # 3. Patch gradle.properties
     gradle_props = 'android/gradle.properties'
     if os.path.exists(gradle_props):
         with open(gradle_props, 'a', encoding='utf-8') as f:
             f.write('\nandroid.suppressUnsupportedCompileSdk=36\n')
         print('[CONFIGURE] Added android.suppressUnsupportedCompileSdk=36 to gradle.properties')
 
-    # 6. Add Android permissions
+    # 4. Add Android permissions
     manifest_path = 'android/app/src/main/AndroidManifest.xml'
     if os.path.exists(manifest_path):
         with open(manifest_path, 'r', encoding='utf-8') as f:
@@ -110,7 +54,7 @@ gradle.taskGraph.whenReady {
                 f.write(manifest)
             print('[CONFIGURE] Successfully added permissions to AndroidManifest.xml')
 
-    # 7. Scan and patch all plugins in pub-cache directly
+    # 5. Scan and patch all plugins in pub-cache directly to compileSdk 36
     patch_pub_cache()
 
 def patch_pub_cache():
@@ -152,19 +96,13 @@ def patch_pub_cache():
                                         new_line = nl
                             new_lines.append(new_line)
 
-                        content = ''.join(new_lines)
-
-                        # Disable AarMetadata tasks directly in Groovy plugin build file
-                        if file == 'build.gradle' and 'AarMetadata' not in content:
-                            content += '\n\ntasks.configureEach { task -> if (task.name.contains("AarMetadata")) { task.enabled = false } }\n'
-                            modified = True
-
                         if modified:
+                            content = ''.join(new_lines)
                             with open(file_path, 'w', encoding='utf-8') as f:
                                 f.write(content)
                             patched_count += 1
                             plugin_name = os.path.basename(os.path.dirname(os.path.dirname(file_path)))
-                            print(f"[CONFIGURE] Patched {plugin_name} in pub-cache")
+                            print(f"[CONFIGURE] Patched {plugin_name} to compileSdk 36 in pub-cache")
                     except Exception as e:
                         pass
     print(f"[CONFIGURE] Total pub-cache plugins patched: {patched_count}")
