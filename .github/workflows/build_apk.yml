@@ -38,13 +38,37 @@ jobs:
         run: |
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
+      - name: Generate Canonical Android Scaffold
+        working-directory: mobile_app
+        run: |
+          rm -rf android
+          flutter create . --org com.creator --project-name shorts_creator --platforms=android
+          python3 -c "
+          import re
+          with open('android/app/build.gradle', 'r') as f:
+              c = f.read()
+          c = re.sub(r'compileSdk\s*=\s*flutter\.compileSdkVersion', 'compileSdk = 35', c)
+          c = re.sub(r'targetSdk\s*=\s*flutter\.targetSdkVersion', 'targetSdk = 35', c)
+          c = re.sub(r'minSdk\s*=\s*flutter\.minSdkVersion', 'minSdk = 21', c)
+          with open('android/app/build.gradle', 'w') as f:
+              f.write(c)
+
+          with open('android/app/src/main/AndroidManifest.xml', 'r') as f:
+              m = f.read()
+          perms = '    <uses-permission android:name=\"android.permission.INTERNET\"/>\n    <uses-permission android:name=\"android.permission.READ_EXTERNAL_STORAGE\"/>\n    <uses-permission android:name=\"android.permission.WRITE_EXTERNAL_STORAGE\"/>\n'
+          if '<uses-permission' not in m:
+              m = m.replace('<application', perms + '    <application')
+              with open('android/app/src/main/AndroidManifest.xml', 'w') as f:
+                  f.write(m)
+          "
+
       - name: Get Flutter Dependencies
         working-directory: mobile_app
         run: flutter pub get
 
       - name: Build Android APK (Release)
         working-directory: mobile_app
-        run: flutter build apk --release
+        run: flutter build apk --release --verbose
 
       - name: Upload APK as Workflow Artifact
         uses: actions/upload-artifact@v4
