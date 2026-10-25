@@ -188,7 +188,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: ShortsStyle,Poppins Black,125,&H0000F5FF,&H00FFFFFF,&H00000000,&HE0000000,1,0,0,0,100,100,0,0,1,8.0,4.0,2,40,40,840,1
+Style: ShortsStyle,Poppins Black,Arial Black,DejaVu Sans,125,&H0000F5FF,&H00FFFFFF,&H00000000,&HE0000000,1,0,0,0,100,100,0,0,1,8.0,4.0,2,40,40,840,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -214,11 +214,15 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             if gap_cs > 0:
                 karaoke_text += f"{{\\k{gap_cs}}}"
             duration_cs = max(1, int(w["duration"] / 10))
-            clean_word = w["word"].strip().upper()
-            karaoke_text += f"{{\\k{duration_cs}}}{clean_word} "
+            # Sanitize word: strip { and } so ASS tags aren't broken, escape \
+            raw_w = re.sub(r'[{}]', '', str(w.get("word", ""))).replace('\\', '/').strip()
+            clean_word = raw_w.upper()
+            if clean_word:
+                karaoke_text += f"{{\\k{duration_cs}}}{clean_word} "
             current_time = w["end"]
             
-        dialogues.append(f"Dialogue: 0,{start_str},{end_str},ShortsStyle,,0,0,0,,{karaoke_text.strip()}")
+        if karaoke_text.strip():
+            dialogues.append(f"Dialogue: 0,{start_str},{end_str},ShortsStyle,,0,0,0,,{karaoke_text.strip()}")
 
     with open(ass_path, "w", encoding="utf-8") as f:
         f.write(header + "\n".join(dialogues) + "\n")
@@ -265,10 +269,11 @@ def assemble_video(media_path, audio_path, ass_path, output_path, bgm_name="musi
     log(f"Target duration: {duration:.2f} seconds")
 
     ext = os.path.splitext(media_path)[1].lower()
-    is_image = ext in [".jpg", ".jpeg", ".png", ".webp"]
+    is_image = ext in [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff"]
 
-    # Escape subtitle path for FFmpeg subtitles filter
-    escaped_ass = ass_path.replace(":", "\\:").replace("'", "\\'")
+    # Escape subtitle path for FFmpeg subtitles filter (normalize forward slashes)
+    norm_ass = ass_path.replace("\\", "/")
+    escaped_ass = norm_ass.replace(":", "\\:").replace("'", "\\'")
 
     # Generate Top & Bottom Blur Mask
     work_dir = os.path.dirname(output_path)
@@ -290,7 +295,7 @@ def assemble_video(media_path, audio_path, ass_path, output_path, bgm_name="musi
     if is_image:
         log("Processing image with Top/Bottom Cinema Blur and Poppins subtitles...")
         v_filter = (
-            f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='min(zoom+0.0006,1.12)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=30,setsar=1,format=yuv420p[v_scaled];"
+            f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='min(zoom+0.0006,1.08)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=30,setsar=1,format=yuv420p[v_scaled];"
             f"[v_scaled]split=2[fg_sharp][fg_for_blur];"
             f"[fg_for_blur]boxblur=30:5,format=yuv420p[bg_blur];"
             f"[2:v]scale=1080:1920,setsar=1,format=yuv420p[v_mask];"
@@ -300,7 +305,7 @@ def assemble_video(media_path, audio_path, ass_path, output_path, bgm_name="musi
     else:
         log("Processing video with Top/Bottom Cinema Blur and Poppins subtitles...")
         v_filter = (
-            f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,format=yuv420p[v_scaled];"
+            f"[0:v]fps=30,setpts=PTS-STARTPTS,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,format=yuv420p[v_scaled];"
             f"[v_scaled]split=2[fg_sharp][fg_for_blur];"
             f"[fg_for_blur]boxblur=30:5,format=yuv420p[bg_blur];"
             f"[2:v]scale=1080:1920,setsar=1,format=yuv420p[v_mask];"
@@ -312,8 +317,8 @@ def assemble_video(media_path, audio_path, ass_path, output_path, bgm_name="musi
 
     if has_bgm:
         a_filter = (
-            f"[3:a]aloop=loop=-1:size=2e+09,volume=0.13[bgm_loop];"
-            f"[1:a]volume=1.0[voice];"
+            f"[1:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,volume=1.0[voice];"
+            f"[3:a]aloop=loop=-1:size=2e+09,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,volume=0.13[bgm_loop];"
             f"[voice][bgm_loop]amix=inputs=2:duration=first:dropout_transition=2[a]"
         )
         filter_complex = f"{v_filter};{a_filter}"
@@ -334,6 +339,10 @@ def assemble_video(media_path, audio_path, ass_path, output_path, bgm_name="musi
             output_path
         ]
     else:
+        a_filter = (
+            f"[1:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,volume=1.0[a]"
+        )
+        filter_complex = f"{v_filter};{a_filter}"
         cmd = [
             "ffmpeg", "-y",
             *input_args,
@@ -341,9 +350,9 @@ def assemble_video(media_path, audio_path, ass_path, output_path, bgm_name="musi
             "-i", audio_path,
             "-loop", "1",
             "-i", mask_path,
-            "-filter_complex", v_filter,
+            "-filter_complex", filter_complex,
             "-map", "[v]",
-            "-map", "1:a",
+            "-map", "[a]",
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-b:a", "192k",
             "-t", str(duration),

@@ -58,7 +58,8 @@ class GitHubService {
     required Uint8List bytes,
     String contentType = 'application/octet-stream',
   }) async {
-    final url = Uri.parse('$uploadBase/repos/$repo/releases/$releaseId/assets?name=$fileName');
+    final encodedName = Uri.encodeComponent(fileName);
+    final url = Uri.parse('$uploadBase/repos/$repo/releases/$releaseId/assets?name=$encodedName');
     final response = await http.post(
       url,
       headers: {

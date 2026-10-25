@@ -301,6 +301,13 @@ Kembalikan respon HANYA dalam format JSON murni yang valid tanpa teks penjelasan
           cleanJson = cleanJson.split('```')[1].split('```')[0].trim();
         }
 
+        // Extract pure JSON object boundaries if preamble/postamble text exists
+        final firstBrace = cleanJson.indexOf('{');
+        final lastBrace = cleanJson.lastIndexOf('}');
+        if (firstBrace != -1 && lastBrace != -1 && lastBrace > firstBrace) {
+          cleanJson = cleanJson.substring(firstBrace, lastBrace + 1);
+        }
+
         try {
           final decoded = jsonDecode(cleanJson);
           if (decoded is Map) {
