@@ -24,6 +24,7 @@ class _JobsScreenState extends State<JobsScreen> {
   void initState() {
     super.initState();
     _loadJobs();
+    _syncFromCloud();
     _startPolling();
   }
 
@@ -49,6 +50,49 @@ class _JobsScreenState extends State<JobsScreen> {
     final prefs = await SharedPreferences.getInstance();
     final rawJobs = _jobs.map((j) => jsonEncode(j.toJson())).toList();
     await prefs.setStringList('jobs_history', rawJobs);
+  }
+
+  Future<void> _syncFromCloud() async {
+    final prefs = await SharedPreferences.getInstance();
+    final repo = prefs.getString('github_repo') ?? '';
+    final token = prefs.getString('github_token') ?? '';
+
+    if (repo.isEmpty || token.isEmpty) return;
+
+    try {
+      final cloudJobs = await GitHubService.fetchJobReleases(repo: repo, token: token);
+      final existingIds = _jobs.map((j) => j.id).toSet();
+      bool hasChanges = false;
+
+      for (var cj in cloudJobs) {
+        final id = cj['id'] as String;
+        if (!existingIds.contains(id)) {
+          _jobs.add(JobModel(
+            id: id,
+            topic: cj['title'] ?? id,
+            script: '',
+            voice: '',
+            status: cj['status'],
+            videoUrl: cj['videoUrl'],
+            createdAt: cj['createdAt'],
+          ));
+          hasChanges = true;
+        } else {
+          final existing = _jobs.firstWhere((j) => j.id == id);
+          if (existing.status != 'completed' && cj['status'] == 'completed') {
+            existing.status = 'completed';
+            existing.videoUrl = cj['videoUrl'];
+            hasChanges = true;
+          }
+        }
+      }
+
+      if (hasChanges && mounted) {
+        _jobs.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        setState(() {});
+        await _saveJobs();
+      }
+    } catch (_) {}
   }
 
   void _startPolling() {
@@ -177,35 +221,45 @@ class _JobsScreenState extends State<JobsScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: () {
-              _checkPendingJobs();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Memeriksa status render...'), duration: Duration(seconds: 1)),
-              );
+            onPressed: () async {
+              await _syncFromCloud();
+              await _checkPendingJobs();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Menyinkronkan riwayat dari cloud...'), duration: Duration(seconds: 1)),
+                );
+              }
             },
           ),
         ],
       ),
-      body: _jobs.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+      body: RefreshIndicator(
+        onRefresh: () async {
+          await _syncFromCloud();
+          await _checkPendingJobs();
+        },
+        child: _jobs.isEmpty
+            ? ListView(
                 children: [
+                  SizedBox(height: MediaQuery.of(context).size.height * 0.3),
                   Icon(Icons.video_library_outlined, size: 70, color: Colors.grey[700]),
                   const SizedBox(height: 16),
-                  const Text(
-                    'Belum ada video yang dibuat.',
-                    style: TextStyle(fontSize: 16, color: Colors.grey),
+                  const Center(
+                    child: Text(
+                      'Belum ada video yang dibuat.',
+                      style: TextStyle(fontSize: 16, color: Colors.grey),
+                    ),
                   ),
                   const SizedBox(height: 8),
-                  const Text(
-                    'Buka tab "Buat Video" untuk memulai.',
-                    style: TextStyle(fontSize: 13, color: Colors.grey),
+                  const Center(
+                    child: Text(
+                      'Buka tab "Buat Video" untuk memulai, atau tarik ke bawah untuk sinkronisasi.',
+                      style: TextStyle(fontSize: 13, color: Colors.grey),
+                    ),
                   ),
                 ],
-              ),
-            )
-          : ListView.builder(
+              )
+            : ListView.builder(
               padding: const EdgeInsets.all(12),
               itemCount: _jobs.length,
               itemBuilder: (ctx, index) {
@@ -255,6 +309,7 @@ class _JobsScreenState extends State<JobsScreen> {
                 );
               },
             ),
+      ),
     );
   }
 

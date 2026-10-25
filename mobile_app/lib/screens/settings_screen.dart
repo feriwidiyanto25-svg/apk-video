@@ -63,25 +63,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Card(
-              color: Color(0xFF1E293B),
-              child: Padding(
-                padding: EdgeInsets.all(14.0),
-                child: Row(
-                  children: [
-                    Icon(Icons.info_outline, color: Colors.blueAccent),
-                    SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        'Semua proses render dijalankan secara gratis di GitHub Actions milik Anda sendiri.',
-                        style: TextStyle(fontSize: 13, color: Colors.white70),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
             const Text(
               '1. GitHub Repository (Owner/Repo)',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),

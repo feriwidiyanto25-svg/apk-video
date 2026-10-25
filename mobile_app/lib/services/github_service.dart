@@ -155,5 +155,43 @@ class GitHubService {
       throw Exception('Gagal mengunduh video hasil: ${response.statusCode}');
     }
   }
+
+  /// Fetch all Releases from repository to sync jobs history across devices
+  static Future<List<Map<String, dynamic>>> fetchJobReleases({
+    required String repo,
+    required String token,
+  }) async {
+    final url = Uri.parse('$apiBase/repos/$repo/releases?per_page=30');
+    final response = await http.get(url, headers: _headers(token));
+
+    if (response.statusCode != 200) {
+      return [];
+    }
+
+    final List data = jsonDecode(response.body);
+    final List<Map<String, dynamic>> results = [];
+
+    for (var r in data) {
+      final tag = r['tag_name']?.toString() ?? '';
+      if (tag.startsWith('job-')) {
+        String? videoUrl;
+        final List assets = r['assets'] ?? [];
+        for (var a in assets) {
+          if (a['name']?.toString().toLowerCase() == 'output_shorts.mp4') {
+            videoUrl = a['browser_download_url'];
+            break;
+          }
+        }
+        results.add({
+          'id': tag,
+          'title': r['name'] ?? tag,
+          'status': videoUrl != null ? 'completed' : 'rendering',
+          'videoUrl': videoUrl,
+          'createdAt': DateTime.tryParse(r['created_at'] ?? '') ?? DateTime.now(),
+        });
+      }
+    }
+    return results;
+  }
 }
 
