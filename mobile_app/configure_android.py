@@ -133,23 +133,28 @@ def patch_pub_cache():
                     file_path = os.path.join(root, file)
                     try:
                         with open(file_path, 'r', encoding='utf-8') as f:
-                            content = f.read()
+                            lines = f.readlines()
                         
                         modified = False
-                        
-                        # Replace compileSdkVersion \d+ or flutter.compileSdkVersion
-                        new_content, c1 = re.subn(r'compileSdkVersion\s*=?\s*\(?\s*(\d+|flutter\.compileSdkVersion)\s*\)?', 'compileSdkVersion 36', content)
-                        if c1 > 0:
-                            modified = True
-                            content = new_content
-                            
-                        # Replace compileSdk = \d+ or flutter.compileSdkVersion
-                        new_content, c2 = re.subn(r'compileSdk\s*=\s*\(?\s*(\d+|flutter\.compileSdkVersion)\s*\)?', 'compileSdk = 36', content)
-                        if c2 > 0:
-                            modified = True
-                            content = new_content
+                        new_lines = []
+                        for line in lines:
+                            new_line = line
+                            if not line.strip().startswith('//'):
+                                if 'compileSdkVersion' in line:
+                                    nl = re.sub(r'(compileSdkVersion\s*=?\s*\(?)\s*(\d+|flutter\.compileSdkVersion)(\s*\)?)', r'\g<1>36\g<3>', line)
+                                    if nl != line:
+                                        modified = True
+                                        new_line = nl
+                                elif 'compileSdk' in line:
+                                    nl = re.sub(r'(compileSdk\s*=?\s*\(?)\s*(\d+|flutter\.compileSdkVersion)(\s*\)?)', r'\g<1>36\g<3>', line)
+                                    if nl != line:
+                                        modified = True
+                                        new_line = nl
+                            new_lines.append(new_line)
 
-                        # Disable AarMetadata tasks directly in plugin build file
+                        content = ''.join(new_lines)
+
+                        # Disable AarMetadata tasks directly in Groovy plugin build file
                         if file == 'build.gradle' and 'AarMetadata' not in content:
                             content += '\n\ntasks.configureEach { task -> if (task.name.contains("AarMetadata")) { task.enabled = false } }\n'
                             modified = True
