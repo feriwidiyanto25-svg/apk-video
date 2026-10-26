@@ -175,9 +175,83 @@ def break_chunk_into_lines(chunk_words):
     elif n == 4:
         return [chunk_words[0:2], chunk_words[2:4]]
     elif n == 5:
+        w2_str = str(chunk_words[2].get("word", "")).strip()
+        if any(w2_str.endswith(p) for p in (',', ';', ':')):
+            return [chunk_words[0:3], chunk_words[3:5]]
         return [chunk_words[0:2], chunk_words[2:4], chunk_words[4:5]]
     else:  # n >= 6
         return [chunk_words[0:2], chunk_words[2:4], chunk_words[4:]]
+
+def smart_chunk_words(words):
+    """
+    Intelligently group words into 2-3 line subtitle chunks based on:
+    1. Sentence ending punctuation (. ! ? ...) -> Always break to keep sentences separate
+    2. Audio pauses (breath/silence >= 260ms) -> Natural speech breaks
+    3. Clause punctuation (, ; : —) -> Natural grammatical pauses
+    4. Maximum word limits (3 to 6 words per screen)
+    """
+    if not words:
+        return []
+
+    sentence_ends = ('.', '!', '?', '…', '?!', '!?')
+    clause_ends = (',', ';', ':', '—', '-')
+
+    chunks = []
+    current_chunk = []
+
+    for i, w in enumerate(words):
+        current_chunk.append(w)
+        raw_word = str(w.get("word", "")).strip()
+
+        is_sentence_end = any(raw_word.endswith(p) for p in sentence_ends)
+        is_clause_end = any(raw_word.endswith(p) for p in clause_ends)
+
+        # Detect natural speech pause between words (in milliseconds)
+        has_audio_pause = False
+        if i + 1 < len(words):
+            gap_ms = words[i + 1]["start"] - w["end"]
+            if gap_ms >= 260:  # Pause >= 260ms indicates breath or clause transition
+                has_audio_pause = True
+
+        chunk_len = len(current_chunk)
+        rem_words = len(words) - (i + 1)
+
+        should_break = False
+
+        # 1. Hard break: End of sentence (e.g. "Ingat ini baik-baik.")
+        if is_sentence_end:
+            should_break = True
+
+        # 2. Audio pause break: Narrator paused for breath between thoughts
+        elif has_audio_pause and chunk_len >= 3:
+            should_break = True
+
+        # 3. Clause break (comma, colon) if chunk has 3 to 5 words
+        elif is_clause_end and 3 <= chunk_len <= 5:
+            should_break = True
+
+        # 4. Maximum words limit: Keep screen readable (max 5-6 words per chunk)
+        elif chunk_len >= 5:
+            if chunk_len == 5 and i + 1 < len(words) and any(str(words[i + 1].get("word", "")).strip().endswith(p) for p in sentence_ends):
+                should_break = False
+            else:
+                should_break = True
+
+        # Guard against leaving an isolated 1-word chunk at the end
+        if should_break:
+            if rem_words == 1 and not is_sentence_end and chunk_len < 6:
+                should_break = False
+
+        if should_break or (i == len(words) - 1):
+            chunks.append(current_chunk)
+            current_chunk = []
+
+    # Merge isolated 1-word final chunk into preceding chunk if preceding is small
+    if len(chunks) > 1 and len(chunks[-1]) == 1 and len(chunks[-2]) <= 4:
+        last = chunks.pop()
+        chunks[-1].extend(last)
+
+    return chunks
 
 def create_karaoke_ass(words, ass_path, raw_text="", audio_path=""):
     log("Creating dynamic karaoke subtitles (.ass) with Poppins Black (Extra Large, 2-3 Lines)...")
@@ -210,19 +284,9 @@ Style: ShortsStyle,Poppins Black,125,&H0000F5FF,&H00FFFFFF,&H00000000,&H80000000
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
-    # 4 to 6 words per screen chunk for modern 2-3 line vertical Shorts subtitles
-    chunks = []
-    i = 0
-    while i < len(words):
-        rem = len(words) - i
-        if rem == 7 or rem == 8:
-            take = 4
-        elif rem <= 6:
-            take = rem
-        else:
-            take = 5
-        chunks.append(words[i:i + take])
-        i += take
+    # Group words intelligently based on sentence punctuation, audio pauses, and 2-3 line layout
+    chunks = smart_chunk_words(words)
+    log(f"Grouped into {len(chunks)} natural sentence/clause chunks")
 
     dialogues = []
     for chunk_idx, chunk in enumerate(chunks):
