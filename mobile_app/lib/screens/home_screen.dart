@@ -235,13 +235,13 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final promptText = '''
 Bertindaklah sebagai pembuat konten video pendek viral profesional (YouTube Shorts, Instagram Reels, Facebook Reels / FB Pro, TikTok).
-Buatkan konten video pendek berdurasi 30-45 detik mengenai topik berikut:
+Buatkan konten video pendek berdurasi 45-60 detik mengenai topik berikut:
 "$topic"
 
 Aturan Penting:
 1. title: Judul video yang sangat memikat, click-worthy, memicu rasa penasaran, dan dilengkapi hashtag utama (maksimal 70 karakter, contoh: "5 Rahasia Kopi yang Bikin Melongo! ☕🔥 #shorts").
 2. description: Deskripsi lengkap siap copy-paste ke Facebook & YouTube. Berikan kalimat pengantar yang memikat, ajakan interaksi (like/share/komentar), dan 6-8 hashtag populer relevan (seperti #shorts #reels #fbpro #viral #faktaunik).
-3. script: Naskah narasi suara Bahasa Indonesia santai (60-80 kata) dengan HOOK penasaran yang kuat di 3 detik pertama. Tuliskan HANYA kata-kata yang diucapkan narator secara langsung (voiceover only). Jangan gunakan tanda kurung, intro "Halo guys", atau instruksi visual.
+3. script: Naskah narasi suara Bahasa Indonesia santai, padat, dan mendalam (panjang 110-140 kata, untuk durasi 45-60 detik) dengan HOOK penasaran yang kuat di 3 detik pertama, penjelasan fakta menarik yang memikat penonton, serta penutup ajakan diskusi. Tuliskan HANYA kata-kata yang diucapkan narator secara langsung (voiceover only). Jangan gunakan tanda kurung, intro klise "Halo guys", atau instruksi visual.
 
 Kembalikan respon HANYA dalam format JSON murni yang valid tanpa teks penjelasan di luar JSON:
 {

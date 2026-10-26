@@ -102,13 +102,13 @@ def generate_script_with_gemini(topic, gemini_api_key):
     log(f"Discovered candidate Gemini models: {candidate_models[:6]}")
 
     prompt = (
-        f"Buatkan naskah video pendek (YouTube Shorts / TikTok / Reels) berdurasi 30-45 detik mengenai topik berikut:\n"
+        f"Buatkan naskah video pendek (YouTube Shorts / TikTok / Reels) berdurasi 45-60 detik mengenai topik berikut:\n"
         f"\"{topic}\"\n\n"
         "Aturan Penting:\n"
-        "1. Gunakan Bahasa Indonesia yang santai, memikat, dan memiliki HOOK rasa penasaran yang kuat di 3 detik pertama.\n"
+        "1. Gunakan Bahasa Indonesia yang santai, memikat, mendalam, dan memiliki HOOK rasa penasaran yang kuat di 3 detik pertama.\n"
         "2. Jangan gunakan tanda kurung, instruksi visual, intro klise seperti 'Halo guys', atau emoji.\n"
         "3. Tuliskan HANYA kata-kata yang akan diucapkan narator secara langsung (voiceover only).\n"
-        "4. Panjang naskah 60-80 kata."
+        "4. Panjang naskah 110-140 kata (durasi sekitar 45-60 detik)."
     )
     
     for model in candidate_models:
@@ -131,8 +131,8 @@ def generate_script_with_gemini(topic, gemini_api_key):
 
 async def generate_speech_and_subtitles(text, voice, audio_path, ass_path):
     import edge_tts
-    log(f"Generating voiceover with voice: {voice}...")
-    communicate = edge_tts.Communicate(text, voice, boundary="WordBoundary")
+    log(f"Generating voiceover with voice: {voice} (calm & natural, rate: -10%)...")
+    communicate = edge_tts.Communicate(text, voice, rate="-10%", boundary="WordBoundary")
     
     words_data = []
     with open(audio_path, "wb") as f_audio:
@@ -162,18 +162,35 @@ def format_ass_time(ms):
     centis = int((ms % 1000) // 10)
     return f"{hours}:{mins:02d}:{secs:02d}.{centis:02d}"
 
+def break_chunk_into_lines(chunk_words):
+    n = len(chunk_words)
+    if n <= 2:
+        return [chunk_words]
+    elif n == 3:
+        l01 = len(chunk_words[0].get("word", "")) + len(chunk_words[1].get("word", ""))
+        if l01 <= 14:
+            return [chunk_words[0:2], chunk_words[2:3]]
+        else:
+            return [[chunk_words[0]], chunk_words[1:3]]
+    elif n == 4:
+        return [chunk_words[0:2], chunk_words[2:4]]
+    elif n == 5:
+        return [chunk_words[0:2], chunk_words[2:4], chunk_words[4:5]]
+    else:  # n >= 6
+        return [chunk_words[0:2], chunk_words[2:4], chunk_words[4:]]
+
 def create_karaoke_ass(words, ass_path, raw_text="", audio_path=""):
-    log("Creating dynamic karaoke subtitles (.ass) with Poppins Black (Extra Large)...")
+    log("Creating dynamic karaoke subtitles (.ass) with Poppins Black (Extra Large, 2-3 Lines)...")
     
     # Fallback timing if WordBoundary data was empty: distribute words evenly across audio duration
     if not words and raw_text:
         log("No WordBoundary data captured, generating duration-proportional subtitle chunks...")
         raw_words = [w.strip() for w in raw_text.split() if w.strip()]
-        total_audio_ms = 30000.0
+        total_audio_ms = 45000.0
         if audio_path and os.path.exists(audio_path):
             total_audio_ms = get_audio_duration(audio_path) * 1000.0
         
-        word_dur = max(220.0, (total_audio_ms - 500.0) / max(1, len(raw_words)))
+        word_dur = max(240.0, (total_audio_ms - 500.0) / max(1, len(raw_words)))
         cur_t = 200.0
         words = []
         for rw in raw_words:
@@ -188,49 +205,68 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: ShortsStyle,Poppins Black,120,&H0000F5FF,&H00FFFFFF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,8.0,4.0,2,40,40,840,1
+Style: ShortsStyle,Poppins Black,125,&H0000F5FF,&H00FFFFFF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,9.0,4.0,5,40,40,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
-    # 2 words per chunk for punchy, dynamic, modern vertical Shorts subtitles
-    chunk_size = 2
+    # 4 to 6 words per screen chunk for modern 2-3 line vertical Shorts subtitles
+    chunks = []
+    i = 0
+    while i < len(words):
+        rem = len(words) - i
+        if rem == 7 or rem == 8:
+            take = 4
+        elif rem <= 6:
+            take = rem
+        else:
+            take = 5
+        chunks.append(words[i:i + take])
+        i += take
+
     dialogues = []
-    for i in range(0, len(words), chunk_size):
-        chunk = words[i:i + chunk_size]
+    for chunk_idx, chunk in enumerate(chunks):
         if not chunk:
             continue
         line_start_ms = chunk[0]["start"]
-        if i + chunk_size < len(words):
-            next_start = words[i + chunk_size]["start"]
-            line_end_ms = min(chunk[-1]["end"] + 60, next_start)
+        if chunk_idx + 1 < len(chunks):
+            next_start = chunks[chunk_idx + 1][0]["start"]
+            line_end_ms = min(chunk[-1]["end"] + 70, next_start)
         else:
-            line_end_ms = chunk[-1]["end"] + 300
+            line_end_ms = chunk[-1]["end"] + 450
         
         start_str = format_ass_time(line_start_ms)
         end_str = format_ass_time(line_end_ms)
         
-        # Build karaoke text: {\k<centiseconds>}WORD
-        karaoke_text = ""
+        lines = break_chunk_into_lines(chunk)
+        karaoke_parts = []
         current_time = line_start_ms
-        for w in chunk:
-            gap_cs = max(0, int((w["start"] - current_time) / 10))
-            if gap_cs > 0:
-                karaoke_text += f"{{\\k{gap_cs}}}"
-            duration_cs = max(1, int(w["duration"] / 10))
-            # Sanitize word: strip { and } so ASS tags aren't broken, escape \
-            raw_w = re.sub(r'[{}]', '', str(w.get("word", ""))).replace('\\', '/').strip()
-            clean_word = raw_w.upper()
-            if clean_word:
-                karaoke_text += f"{{\\k{duration_cs}}}{clean_word} "
-            current_time = w["end"]
-            
-        if karaoke_text.strip():
-            dialogues.append(f"Dialogue: 0,{start_str},{end_str},ShortsStyle,,0,0,0,,{karaoke_text.strip()}")
+
+        for line_words in lines:
+            line_text = ""
+            for w in line_words:
+                raw_w = re.sub(r'[{}]', '', str(w.get("word", ""))).replace('\\', '/').strip()
+                clean_word = raw_w.upper()
+                if not clean_word:
+                    continue
+
+                gap_cs = max(0, int((w["start"] - current_time) / 10))
+                if gap_cs > 0:
+                    line_text += f"{{\\k{gap_cs}}}"
+                duration_cs = max(1, int(w["duration"] / 10))
+                line_text += f"{{\\k{duration_cs}}}{clean_word} "
+                current_time = w["end"]
+
+            if line_text.strip():
+                karaoke_parts.append(line_text.strip())
+
+        full_karaoke_dialogue = "\\N".join(karaoke_parts)
+        if full_karaoke_dialogue.strip():
+            dialogues.append(f"Dialogue: 0,{start_str},{end_str},ShortsStyle,,0,0,0,,{full_karaoke_dialogue}")
 
     with open(ass_path, "w", encoding="utf-8") as f:
         f.write(header + "\n".join(dialogues) + "\n")
-    log(f"Subtitles created at {ass_path} (total {len(dialogues)} subtitle lines, Fontsize: 120, MarginV: 840)")
+    log(f"Subtitles created at {ass_path} (total {len(dialogues)} subtitle chunks, Fontsize: 125, Alignment: Middle-Center, 2-3 lines per chunk)")
 
 def get_audio_duration(audio_path):
     cmd = [
