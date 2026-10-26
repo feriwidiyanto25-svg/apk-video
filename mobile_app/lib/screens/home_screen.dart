@@ -457,10 +457,11 @@ Kembalikan respon HANYA dalam format JSON murni yang valid tanpa teks penjelasan
     });
 
     final jobId = 'job-${DateTime.now().millisecondsSinceEpoch}';
+    int? createdReleaseId;
 
     try {
       // 1. Create GitHub Release with Title and Description
-      setState(() => _submitStep = '1/4 Membuat Release Job di GitHub...');
+      setState(() => _submitStep = '1/4 Menyiapkan Job di GitHub...');
       final releaseId = await GitHubService.createRelease(
         repo: repo,
         token: token,
@@ -468,6 +469,7 @@ Kembalikan respon HANYA dalam format JSON murni yang valid tanpa teks penjelasan
         title: title,
         body: description,
       );
+      createdReleaseId = releaseId;
 
       // 2. Upload Config JSON
       setState(() => _submitStep = '2/4 Mengunggah naskah & konfigurasi...');
@@ -548,10 +550,33 @@ Kembalikan respon HANYA dalam format JSON murni yang valid tanpa teks penjelasan
         widget.onTabSwitch(1);
       }
     } catch (e) {
+      // Clean up incomplete release on GitHub if upload failed
+      if (createdReleaseId != null) {
+        try {
+          await GitHubService.deleteRelease(repo: repo, token: token, tag: jobId);
+        } catch (_) {}
+      }
       if (mounted) {
         setState(() => _isSubmitting = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Terjadi kesalahan: $e'), backgroundColor: Colors.red),
+        final cleanMsg = e.toString().replaceAll('Exception: ', '').trim();
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.wifi_off_rounded, color: Colors.redAccent),
+                SizedBox(width: 8),
+                Text('Gagal Mengunggah', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              ],
+            ),
+            content: Text(cleanMsg, style: const TextStyle(fontSize: 14)),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
         );
       }
     }

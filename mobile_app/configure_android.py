@@ -45,6 +45,7 @@ def configure():
             manifest = f.read()
         perms = (
             '    <uses-permission android:name="android.permission.INTERNET"/>\n'
+            '    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>\n'
             '    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>\n'
             '    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>\n'
         )
