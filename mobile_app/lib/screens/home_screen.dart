@@ -19,11 +19,15 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  final _geminiKeyController = TextEditingController();
   final _topicController = TextEditingController();
   final _titleController = TextEditingController();
   final _descController = TextEditingController();
   final _scriptController = TextEditingController();
 
+  String _creationMode = 'ai'; // 'manual' or 'ai'
+  bool _obscureGeminiKey = true;
+  bool _isTestingGeminiKey = false;
   String _selectedVoice = 'id-ID-GadisNeural';
   String _selectedMusic = 'music1.mp3';
   File? _selectedMedia;
@@ -33,19 +37,6 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isSubmitting = false;
   bool _isGeneratingScript = false;
   String _submitStep = '';
-
-  final List<Map<String, String>> _voices = [
-    {
-      'id': 'id-ID-GadisNeural',
-      'name': 'Gadis (Wanita)',
-      'desc': 'Suara ramah, ceria, cocok untuk tips, edukasi, dan hiburan'
-    },
-    {
-      'id': 'id-ID-ArdiNeural',
-      'name': 'Ardi (Laki-laki)',
-      'desc': 'Suara berwibawa, tegas, cocok untuk berita, misteri, motivasi'
-    },
-  ];
 
   final List<Map<String, String>> _musicList = [
     {
@@ -81,7 +72,24 @@ class _HomeScreenState extends State<HomeScreen> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _loadSavedSettings();
+  }
+
+  Future<void> _loadSavedSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedKey = prefs.getString('gemini_api_key') ?? '';
+    if (mounted && savedKey.isNotEmpty) {
+      setState(() {
+        _geminiKeyController.text = savedKey;
+      });
+    }
+  }
+
+  @override
   void dispose() {
+    _geminiKeyController.dispose();
     _topicController.dispose();
     _titleController.dispose();
     _descController.dispose();
@@ -99,6 +107,68 @@ class _HomeScreenState extends State<HomeScreen> {
         duration: const Duration(seconds: 2),
       ),
     );
+  }
+
+  Future<void> _testGeminiConnection() async {
+    final key = _geminiKeyController.text.trim();
+    if (key.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Masukkan Google Gemini API Key terlebih dahulu.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isTestingGeminiKey = true);
+    try {
+      final res = await http.get(
+        Uri.parse('https://generativelanguage.googleapis.com/v1beta/models?key=$key'),
+      ).timeout(const Duration(seconds: 8));
+
+      if (mounted) {
+        if (res.statusCode == 200) {
+          final data = jsonDecode(res.body);
+          final List modelsList = data['models'] ?? [];
+          int count = 0;
+          for (var m in modelsList) {
+            final List methods = m['supportedGenerationMethods'] ?? [];
+            if (methods.contains('generateContent')) count++;
+          }
+
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('gemini_api_key', key);
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('✅ Gemini Key Valid ($count model aktif ditemukan)!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('❌ Gemini Key Ditolak (${res.statusCode}). Periksa kembali API Key Anda.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal verifikasi Gemini: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isTestingGeminiKey = false);
+      }
+    }
   }
 
   Future<void> _pickMedia() async {
@@ -135,11 +205,22 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _generateScriptWithGemini() async {
+    final geminiKey = _geminiKeyController.text.trim();
+    if (geminiKey.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Harap masukkan Google Gemini API Key Anda terlebih dahulu!'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     final topic = _topicController.text.trim();
     if (topic.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Ketik ide atau topik singkat terlebih dahulu di kolom Topik!'),
+          content: Text('Ketik ide atau topik video terlebih dahulu di kolom Ide / Topik!'),
           backgroundColor: Colors.orange,
         ),
       );
@@ -147,40 +228,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     final prefs = await SharedPreferences.getInstance();
-    final geminiKey = prefs.getString('gemini_api_key') ?? '';
-
-    if (geminiKey.isEmpty) {
-      showDialog(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Row(
-            children: [
-              Icon(Icons.key, color: Colors.amber),
-              SizedBox(width: 8),
-              Text('Gemini API Key Diperlukan'),
-            ],
-          ),
-          content: const Text(
-            'Untuk membuat naskah, judul, dan deskripsi otomatis dengan AI, harap masukkan Google Gemini API Key gratis Anda di tab Pengaturan.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Batal'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(ctx);
-                widget.onTabSwitch(2); // Go to settings tab
-              },
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
-              child: const Text('Ke Pengaturan', style: TextStyle(color: Colors.white)),
-            ),
-          ],
-        ),
-      );
-      return;
-    }
+    await prefs.setString('gemini_api_key', geminiKey);
 
     setState(() => _isGeneratingScript = true);
 
@@ -224,7 +272,7 @@ Kembalikan respon HANYA dalam format JSON murni yang valid tanpa teks penjelasan
         }
       } catch (_) {}
 
-      // 2. Prioritaskan model: utamakan model Flash & versi terbaru (2.5, 3.x, 2.0, 1.5)
+      // 2. Prioritaskan model: utamakan model Flash & versi terbaru
       candidateModels.sort((a, b) {
         int score(String name) {
           int s = 0;
@@ -240,7 +288,7 @@ Kembalikan respon HANYA dalam format JSON murni yang valid tanpa teks penjelasan
         return score(b).compareTo(score(a));
       });
 
-      // 3. Cadangan lengkap jika endpoint daftar model tidak dapat dijangkau
+      // 3. Cadangan lengkap jika daftar model tidak dapat dijangkau
       final fallbackList = [
         'gemini-2.5-flash',
         'gemini-2.5-pro',
@@ -301,7 +349,6 @@ Kembalikan respon HANYA dalam format JSON murni yang valid tanpa teks penjelasan
           cleanJson = cleanJson.split('```')[1].split('```')[0].trim();
         }
 
-        // Extract pure JSON object boundaries if preamble/postamble text exists
         final firstBrace = cleanJson.indexOf('{');
         final lastBrace = cleanJson.lastIndexOf('}');
         if (firstBrace != -1 && lastBrace != -1 && lastBrace > firstBrace) {
@@ -318,7 +365,6 @@ Kembalikan respon HANYA dalam format JSON murni yang valid tanpa teks penjelasan
             });
           }
         } catch (_) {
-          // Fallback parsing regex
           final titleMatch = RegExp(r'"title"\s*:\s*"([^"]+)"').firstMatch(cleanJson);
           final scriptMatch = RegExp(r'"script"\s*:\s*"([^"]+)"').firstMatch(cleanJson);
           final descMatch = RegExp(r'"description"\s*:\s*"([^"]+)"').firstMatch(cleanJson);
@@ -362,18 +408,16 @@ Kembalikan respon HANYA dalam format JSON murni yang valid tanpa teks penjelasan
   }
 
   Future<void> _submitJob() async {
+    final script = _scriptController.text.trim();
     final topic = _topicController.text.trim();
-    final script = _scriptController.text.trim().isNotEmpty
-        ? _scriptController.text.trim()
-        : topic;
     final title = _titleController.text.trim().isNotEmpty
         ? _titleController.text.trim()
-        : (topic.isNotEmpty ? topic : 'Video Shorts');
+        : 'Video Shorts';
     final description = _descController.text.trim();
 
     if (script.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Silakan masukkan topik atau naskah video terlebih dahulu.')),
+        const SnackBar(content: Text('Silakan masukkan teks Suara Narasi terlebih dahulu.')),
       );
       return;
     }
@@ -388,7 +432,13 @@ Kembalikan respon HANYA dalam format JSON murni yang valid tanpa teks penjelasan
     final prefs = await SharedPreferences.getInstance();
     final repo = prefs.getString('github_repo') ?? '';
     final token = prefs.getString('github_token') ?? '';
-    final geminiKey = prefs.getString('gemini_api_key') ?? '';
+    final geminiKey = _geminiKeyController.text.trim().isNotEmpty
+        ? _geminiKeyController.text.trim()
+        : (prefs.getString('gemini_api_key') ?? '');
+
+    if (_geminiKeyController.text.trim().isNotEmpty) {
+      await prefs.setString('gemini_api_key', _geminiKeyController.text.trim());
+    }
 
     if (repo.isEmpty || token.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -518,196 +568,372 @@ Kembalikan respon HANYA dalam format JSON murni yang valid tanpa teks penjelasan
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Section 1: Ide / Topik Utama
+            // Section 1: Pilihan Metode Pembuatan (Manual vs AI)
             const Text(
-              '1. Ide / Topik Utama Video',
+              '1. Metode Pembuatan Naskah',
               style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
             ),
-            const SizedBox(height: 6),
-            TextField(
-              controller: _topicController,
-              decoration: InputDecoration(
-                hintText: 'Contoh: 5 Rahasia Kopi yang Jarang Diketahui Orang',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                filled: true,
-                fillColor: const Color(0xFF1E293B),
-              ),
-            ),
             const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: ElevatedButton.icon(
-                onPressed: _isGeneratingScript ? null : _generateScriptWithGemini,
-                icon: _isGeneratingScript
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Icon(Icons.auto_awesome, size: 18),
-                label: Text(
-                  _isGeneratingScript ? 'Menulis naskah & judul...' : '✨ Buat Naskah, Judul & Deskripsi AI',
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF6366F1), // Indigo
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                ),
-              ),
-            ),
-            const SizedBox(height: 18),
-
-            // Section 2: Judul & Deskripsi Siap Upload
             Container(
-              padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: const Color(0xFF0F172A),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.indigo.withOpacity(0.3)),
+                color: const Color(0xFF1E293B),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.white12),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              padding: const EdgeInsets.all(4),
+              child: Row(
                 children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.content_paste_go, color: Colors.indigoAccent, size: 18),
-                      const SizedBox(width: 8),
-                      const Text(
-                        '2. Judul, Deskripsi & Naskah Suara',
-                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Dibuat otomatis oleh AI atau ketik manual. Anda bisa langsung salin saat mau upload ke FB/YouTube.',
-                    style: TextStyle(fontSize: 12, color: Colors.grey[400]),
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Judul Video
-                  Row(
-                    children: [
-                      const Text('Judul Video (YouTube / FB):', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                      const Spacer(),
-                      if (_titleController.text.isNotEmpty)
-                        TextButton.icon(
-                          onPressed: () => _copyText(_titleController.text, 'Judul'),
-                          icon: const Icon(Icons.copy, size: 14, color: Colors.indigoAccent),
-                          label: const Text('Salin', style: TextStyle(fontSize: 12, color: Colors.indigoAccent)),
-                          style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                  Expanded(
+                    child: InkWell(
+                      onTap: () => setState(() => _creationMode = 'manual'),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        decoration: BoxDecoration(
+                          color: _creationMode == 'manual' ? const Color(0xFF6366F1) : Colors.transparent,
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  TextField(
-                    controller: _titleController,
-                    decoration: InputDecoration(
-                      hintText: 'Judul memikat dengan hashtag (Contoh: 5 Rahasia Kopi! ☕🔥 #shorts)',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                      filled: true,
-                      fillColor: const Color(0xFF1E293B),
-                      suffixIcon: IconButton(
-                        icon: const Icon(Icons.copy, size: 18, color: Colors.grey),
-                        onPressed: () => _copyText(_titleController.text, 'Judul'),
-                        tooltip: 'Salin Judul',
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.edit_note,
+                              size: 20,
+                              color: _creationMode == 'manual' ? Colors.white : Colors.grey[400],
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Manual',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                                color: _creationMode == 'manual' ? Colors.white : Colors.grey[400],
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 12),
-
-                  // Deskripsi Video
-                  Row(
-                    children: [
-                      const Text('Deskripsi & Kumpulan Hashtag:', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                      const Spacer(),
-                      if (_descController.text.isNotEmpty)
-                        TextButton.icon(
-                          onPressed: () => _copyText(_descController.text, 'Deskripsi'),
-                          icon: const Icon(Icons.copy, size: 14, color: Colors.indigoAccent),
-                          label: const Text('Salin', style: TextStyle(fontSize: 12, color: Colors.indigoAccent)),
-                          style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                  Expanded(
+                    child: InkWell(
+                      onTap: () => setState(() => _creationMode = 'ai'),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        decoration: BoxDecoration(
+                          color: _creationMode == 'ai' ? const Color(0xFF6366F1) : Colors.transparent,
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  TextField(
-                    controller: _descController,
-                    maxLines: 3,
-                    decoration: InputDecoration(
-                      hintText: 'Deskripsi lengkap dan kumpulan hashtag viral (#shorts #reels #fbpro #viral)',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                      filled: true,
-                      fillColor: const Color(0xFF1E293B),
-                      suffixIcon: IconButton(
-                        icon: const Icon(Icons.copy, size: 18, color: Colors.grey),
-                        onPressed: () => _copyText(_descController.text, 'Deskripsi'),
-                        tooltip: 'Salin Deskripsi',
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.auto_awesome,
+                              size: 18,
+                              color: _creationMode == 'ai' ? Colors.white : Colors.grey[400],
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Otomatis AI',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                                color: _creationMode == 'ai' ? Colors.white : Colors.grey[400],
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Naskah Suara
-                  const Text(
-                    'Naskah Suara Narasi (Edge-TTS & Subtitle):',
-                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                  ),
-                  const SizedBox(height: 4),
-                  TextField(
-                    controller: _scriptController,
-                    maxLines: 4,
-                    decoration: InputDecoration(
-                      hintText: 'Teks yang akan dibacakan oleh AI dan muncul sebagai subtitle karaoke dinamis.',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                      filled: true,
-                      fillColor: const Color(0xFF1E293B),
                     ),
                   ),
                 ],
               ),
             ),
+
+            // Bagian AI: Hanya Tampil Saat Memilih "Otomatis AI"
+            if (_creationMode == 'ai') ...[
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F172A),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFF6366F1).withOpacity(0.35)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Input Google Gemini API Key
+                    Row(
+                      children: [
+                        const Icon(Icons.key, color: Colors.amber, size: 16),
+                        const SizedBox(width: 6),
+                        const Text(
+                          'Google Gemini API Key (Gratis):',
+                          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                        ),
+                        const Spacer(),
+                        TextButton(
+                          onPressed: _isTestingGeminiKey ? null : _testGeminiConnection,
+                          style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                          child: _isTestingGeminiKey
+                              ? const SizedBox(
+                                  width: 12,
+                                  height: 12,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Text('Tes Key', style: TextStyle(fontSize: 12, color: Colors.amber)),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    TextField(
+                      controller: _geminiKeyController,
+                      obscureText: _obscureGeminiKey,
+                      decoration: InputDecoration(
+                        hintText: 'AIzaSyxxxxxxxxxxxxxxx',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        filled: true,
+                        fillColor: const Color(0xFF1E293B),
+                        prefixIcon: const Icon(Icons.security, size: 18, color: Colors.grey),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _obscureGeminiKey ? Icons.visibility_off : Icons.visibility,
+                            size: 18,
+                            color: Colors.grey,
+                          ),
+                          onPressed: () => setState(() => _obscureGeminiKey = !_obscureGeminiKey),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Input Ide / Topik (Multiline ke bawah seperti WhatsApp)
+                    const Text(
+                      'Ide / Topik Video:',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                    ),
+                    const SizedBox(height: 4),
+                    TextField(
+                      controller: _topicController,
+                      minLines: 2,
+                      maxLines: 5,
+                      keyboardType: TextInputType.multiline,
+                      decoration: InputDecoration(
+                        hintText: 'Ketik topik atau ide cerita yang ingin dibuat video...',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        filled: true,
+                        fillColor: const Color(0xFF1E293B),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Tombol Buat Naskah AI
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _isGeneratingScript ? null : _generateScriptWithGemini,
+                        icon: _isGeneratingScript
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                              )
+                            : const Icon(Icons.auto_awesome, size: 18),
+                        label: Text(
+                          _isGeneratingScript ? 'Menulis naskah & judul AI...' : '✨ Buat Naskah, Judul & Deskripsi AI',
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF6366F1),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 18),
 
-            // Section 3: Pilihan Suara
+            // Judul Video
+            Row(
+              children: [
+                const Text(
+                  'Judul Video',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                ),
+                const Spacer(),
+                if (_titleController.text.isNotEmpty)
+                  TextButton.icon(
+                    onPressed: () => _copyText(_titleController.text, 'Judul'),
+                    icon: const Icon(Icons.copy, size: 14, color: Colors.indigoAccent),
+                    label: const Text('Salin', style: TextStyle(fontSize: 12, color: Colors.indigoAccent)),
+                    style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _titleController,
+              decoration: InputDecoration(
+                hintText: 'Contoh: 5 Rahasia Kopi yang Bikin Melongo! ☕🔥 #shorts',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                filled: true,
+                fillColor: const Color(0xFF1E293B),
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.copy, size: 18, color: Colors.grey),
+                  onPressed: () => _copyText(_titleController.text, 'Judul'),
+                  tooltip: 'Salin Judul',
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Deskripsi Video (Siap Upload)
+            Row(
+              children: [
+                const Text(
+                  'Deskripsi Video',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                ),
+                const Spacer(),
+                if (_descController.text.isNotEmpty)
+                  TextButton.icon(
+                    onPressed: () => _copyText(_descController.text, 'Deskripsi'),
+                    icon: const Icon(Icons.copy, size: 14, color: Colors.indigoAccent),
+                    label: const Text('Salin', style: TextStyle(fontSize: 12, color: Colors.indigoAccent)),
+                    style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _descController,
+              minLines: 2,
+              maxLines: 4,
+              keyboardType: TextInputType.multiline,
+              decoration: InputDecoration(
+                hintText: 'Deskripsi lengkap & hashtag (#shorts #reels #fbpro #viral)...',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                filled: true,
+                fillColor: const Color(0xFF1E293B),
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.copy, size: 18, color: Colors.grey),
+                  onPressed: () => _copyText(_descController.text, 'Deskripsi'),
+                  tooltip: 'Salin Deskripsi',
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Suara Narasi (Point 4: Ganti label menjadi "Suara Narasi")
+            Row(
+              children: [
+                const Text(
+                  'Suara Narasi',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                ),
+                const Spacer(),
+                if (_scriptController.text.isNotEmpty)
+                  TextButton.icon(
+                    onPressed: () => _copyText(_scriptController.text, 'Suara Narasi'),
+                    icon: const Icon(Icons.copy, size: 14, color: Colors.indigoAccent),
+                    label: const Text('Salin', style: TextStyle(fontSize: 12, color: Colors.indigoAccent)),
+                    style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _scriptController,
+              minLines: 3,
+              maxLines: 6,
+              keyboardType: TextInputType.multiline,
+              decoration: InputDecoration(
+                hintText: 'Tulis teks naskah yang akan dibacakan oleh AI dan muncul sebagai subtitle karaoke...',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                filled: true,
+                fillColor: const Color(0xFF1E293B),
+              ),
+            ),
+            const SizedBox(height: 18),
+
+            // Suara AI (Point 5: "Suara AI", Radio Button Sejajar Wanita & Pria)
             const Text(
-              '3. Pilih Karakter Suara AI (Edge-TTS)',
+              'Suara AI',
               style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
-            Column(
-              children: _voices.map((v) {
-                final isSelected = _selectedVoice == v['id'];
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  decoration: BoxDecoration(
-                    color: isSelected ? Colors.redAccent.withOpacity(0.15) : const Color(0xFF1E293B),
+            Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: () => setState(() => _selectedVoice = 'id-ID-GadisNeural'),
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: isSelected ? Colors.redAccent : Colors.transparent,
-                      width: 1.5,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: _selectedVoice == 'id-ID-GadisNeural'
+                            ? Colors.redAccent.withOpacity(0.15)
+                            : const Color(0xFF1E293B),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: _selectedVoice == 'id-ID-GadisNeural' ? Colors.redAccent : Colors.white12,
+                          width: 1.5,
+                        ),
+                      ),
+                      child: RadioListTile<String>(
+                        value: 'id-ID-GadisNeural',
+                        groupValue: _selectedVoice,
+                        title: const Text('Wanita', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                        activeColor: Colors.redAccent,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                        onChanged: (val) {
+                          if (val != null) setState(() => _selectedVoice = val);
+                        },
+                      ),
                     ),
                   ),
-                  child: RadioListTile<String>(
-                    value: v['id']!,
-                    groupValue: _selectedVoice,
-                    title: Text(v['name']!, style: const TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text(v['desc']!, style: const TextStyle(fontSize: 12)),
-                    activeColor: Colors.redAccent,
-                    onChanged: (val) {
-                      if (val != null) setState(() => _selectedVoice = val);
-                    },
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: InkWell(
+                    onTap: () => setState(() => _selectedVoice = 'id-ID-ArdiNeural'),
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: _selectedVoice == 'id-ID-ArdiNeural'
+                            ? Colors.redAccent.withOpacity(0.15)
+                            : const Color(0xFF1E293B),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: _selectedVoice == 'id-ID-ArdiNeural' ? Colors.redAccent : Colors.white12,
+                          width: 1.5,
+                        ),
+                      ),
+                      child: RadioListTile<String>(
+                        value: 'id-ID-ArdiNeural',
+                        groupValue: _selectedVoice,
+                        title: const Text('Pria', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                        activeColor: Colors.redAccent,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                        onChanged: (val) {
+                          if (val != null) setState(() => _selectedVoice = val);
+                        },
+                      ),
+                    ),
                   ),
-                );
-              }).toList(),
+                ),
+              ],
             ),
             const SizedBox(height: 18),
 
-            // Section 4: Pilihan Musik Latar
+            // Pilihan Musik Latar (BGM)
             const Text(
-              '4. Pilih Musik Latar (BGM)',
+              'Musik Latar (BGM)',
               style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
@@ -744,9 +970,9 @@ Kembalikan respon HANYA dalam format JSON murni yang valid tanpa teks penjelasan
             ),
             const SizedBox(height: 18),
 
-            // Section 5: Unggah Media (Foto / Video)
+            // Latar Belakang (Foto atau Video dari HP)
             const Text(
-              '5. Latar Belakang (Foto atau Video dari HP Anda)',
+              'Latar Belakang (Foto atau Video dari HP)',
               style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
