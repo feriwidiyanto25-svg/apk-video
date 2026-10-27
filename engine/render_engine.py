@@ -104,11 +104,13 @@ def generate_script_with_gemini(topic, gemini_api_key):
     prompt = (
         f"Buatkan naskah video pendek (YouTube Shorts / TikTok / Reels) berdurasi 45-60 detik mengenai topik berikut:\n"
         f"\"{topic}\"\n\n"
-        "Aturan Penting:\n"
-        "1. Gunakan Bahasa Indonesia yang santai, memikat, mendalam, dan memiliki HOOK rasa penasaran yang kuat di 3 detik pertama.\n"
-        "2. Jangan gunakan tanda kurung, instruksi visual, intro klise seperti 'Halo guys', atau emoji.\n"
-        "3. Tuliskan HANYA kata-kata yang akan diucapkan narator secara langsung (voiceover only).\n"
-        "4. Panjang naskah 110-140 kata (durasi sekitar 45-60 detik)."
+        "Aturan Penting Agar Penonton Betah & Lanjut Menonton (High Retention):\n"
+        "1. HOOK 3 DETIK PERTAMA: Awali langsung dengan kalimat pembuka yang mengejutkan, paradox, mitos yang dibantah, atau pertanyaan provokatif yang bikin penasaran tinggi sehingga penonton tidak scroll.\n"
+        "2. Gunakan Bahasa Indonesia lisan yang santai, lugas, mengalir cepat, dan mendalam.\n"
+        "3. Jangan gunakan tanda kurung, instruksi visual, intro klise seperti 'Halo guys', atau emoji.\n"
+        "4. Tuliskan HANYA kata-kata yang akan diucapkan narator secara langsung (voiceover only).\n"
+        "5. Akhiri dengan pertanyaan reflektif yang memancing penonton berkomentar.\n"
+        "6. Panjang naskah 110-140 kata (durasi sekitar 45-60 detik)."
     )
     
     for model in candidate_models:
@@ -254,7 +256,7 @@ def smart_chunk_words(words):
     return chunks
 
 def create_karaoke_ass(words, ass_path, raw_text="", audio_path=""):
-    log("Creating dynamic karaoke subtitles (.ass) with Poppins Black (Extra Large, 2-3 Lines)...")
+    log("Creating dynamic karaoke subtitles (.ass) with Poppins Black (Bottom Safe Zone, 2-3 Lines, Fontsize 70)...")
     
     # Fallback timing if WordBoundary data was empty: distribute words evenly across audio duration
     if not words and raw_text:
@@ -279,7 +281,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: ShortsStyle,Poppins Black,125,&H0000F5FF,&H00FFFFFF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,9.0,4.0,5,40,40,0,1
+Style: ShortsStyle,Poppins Black,70,&H0000F5FF,&H00FFFFFF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,4.5,2.0,2,75,75,420,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -330,7 +332,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
     with open(ass_path, "w", encoding="utf-8") as f:
         f.write(header + "\n".join(dialogues) + "\n")
-    log(f"Subtitles created at {ass_path} (total {len(dialogues)} subtitle chunks, Fontsize: 125, Alignment: Middle-Center, 2-3 lines per chunk)")
+    log(f"Subtitles created at {ass_path} (total {len(dialogues)} subtitle chunks, Fontsize: 70, Alignment: Bottom-Center Safe Zone (MarginV: 420), 2-3 lines per chunk)")
 
 def get_audio_duration(audio_path):
     cmd = [
@@ -469,6 +471,156 @@ def assemble_video(media_path, audio_path, ass_path, output_path, bgm_name="musi
         raise Exception(f"FFmpeg error: {result.stderr}")
     log(f"Final video rendered successfully: {output_path} ({os.path.getsize(output_path)} bytes)")
 
+def assemble_multi_scene_video(scene_images, scenes_meta, audio_path, ass_path, output_path, bgm_name="music1.mp3", work_dir="."):
+    log(f"Assembling multi-scene video ({len(scene_images)} scenes) with Ken Burns motion & BGM ({bgm_name})...")
+    total_dur = get_audio_duration(audio_path) + 0.5
+    log(f"Total target video duration: {total_dur:.2f} seconds")
+
+    norm_ass = ass_path.replace("\\", "/")
+    escaped_ass = norm_ass.replace(":", "\\:").replace("'", "\\'")
+
+    num_scenes = len(scene_images)
+    if scenes_meta and len(scenes_meta) == num_scenes:
+        w_counts = [max(1, len(str(s.get("narration", "")).split())) for s in scenes_meta]
+        total_words = max(1, sum(w_counts))
+        scene_durations = [(w / total_words) * total_dur for w in w_counts]
+    else:
+        scene_durations = [total_dur / num_scenes for _ in range(num_scenes)]
+
+    # Guarantee min 2.5s per scene
+    for i in range(num_scenes):
+        if scene_durations[i] < 2.5:
+            scene_durations[i] = 2.5
+    curr_sum = sum(scene_durations)
+    scene_durations = [(d / curr_sum) * total_dur for d in scene_durations]
+    log(f"Scene durations (synced to narration): {[round(d, 2) for d in scene_durations]}")
+
+    clip_paths = []
+    for idx, (img_path, dur) in enumerate(zip(scene_images, scene_durations)):
+        clip_path = os.path.join(work_dir, f"scene_clip_{idx}.mp4")
+        num_frames = max(30, int(dur * 30))
+
+        # Ken Burns: alternating gentle zoom in vs zoom out / pan
+        if idx % 2 == 0:
+            zoom_filter = (
+                f"scale=1080:1920:force_original_aspect_ratio=increase,"
+                f"crop=1080:1920,"
+                f"zoompan=z='min(zoom+0.0004,1.06)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={num_frames}:s=1080x1920:fps=30,"
+                f"setsar=1,format=yuv420p"
+            )
+        else:
+            zoom_filter = (
+                f"scale=1080:1920:force_original_aspect_ratio=increase,"
+                f"crop=1080:1920,"
+                f"zoompan=z='min(zoom+0.0003,1.05)':x='(iw-iw/zoom)*(on/{num_frames})':y='ih/2-(ih/zoom/2)':d={num_frames}:s=1080x1920:fps=30,"
+                f"setsar=1,format=yuv420p"
+            )
+
+        cmd_clip = [
+            "ffmpeg", "-y",
+            "-loop", "1",
+            "-t", f"{dur:.3f}",
+            "-i", img_path,
+            "-vf", zoom_filter,
+            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20",
+            "-r", "30",
+            "-pix_fmt", "yuv420p",
+            clip_path
+        ]
+        log(f"Rendering scene clip {idx+1}/{num_scenes} ({dur:.2f}s)...")
+        res = subprocess.run(cmd_clip, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if res.returncode != 0:
+            log(f"Warning: Ken Burns failed for scene {idx}, falling back to static 9:16 loop")
+            fallback_filter = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,format=yuv420p"
+            cmd_fallback = [
+                "ffmpeg", "-y",
+                "-loop", "1",
+                "-t", f"{dur:.3f}",
+                "-i", img_path,
+                "-vf", fallback_filter,
+                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20",
+                "-r", "30",
+                "-pix_fmt", "yuv420p",
+                clip_path
+            ]
+            subprocess.run(cmd_fallback, check=True)
+
+        clip_paths.append(clip_path)
+
+    # Concat clips
+    concat_list_path = os.path.join(work_dir, "concat_scenes.txt")
+    with open(concat_list_path, "w", encoding="utf-8") as f_concat:
+        for cp in clip_paths:
+            norm_cp = cp.replace("\\", "/")
+            f_concat.write(f"file '{norm_cp}'\n")
+
+    concatenated_video_path = os.path.join(work_dir, "concatenated_scenes.mp4")
+    cmd_concat = [
+        "ffmpeg", "-y",
+        "-f", "concat",
+        "-safe", "0",
+        "-i", concat_list_path,
+        "-c", "copy",
+        concatenated_video_path
+    ]
+    log(f"Concatenating {len(clip_paths)} scene clips...")
+    res_concat = subprocess.run(cmd_concat, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if res_concat.returncode != 0:
+        raise Exception(f"Failed to concat scene clips: {res_concat.stderr}")
+
+    # Check for Background Music file
+    bgm_path = None
+    if bgm_name and bgm_name.lower() != "none":
+        candidate_bgm = os.path.join("music", bgm_name)
+        if os.path.exists(candidate_bgm):
+            bgm_path = candidate_bgm
+            log(f"Found background music file: {bgm_path}")
+        else:
+            log(f"BGM file {candidate_bgm} not found. Skipping BGM.")
+
+    has_bgm = bgm_path is not None
+    v_filter = f"[0:v]subtitles='{escaped_ass}':fontsdir='fonts'[v]"
+
+    if has_bgm:
+        a_filter = (
+            f"[1:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,volume=1.0[voice];"
+            f"[2:a]aloop=loop=-1:size=2e+09,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,volume=0.13[bgm_loop];"
+            f"[voice][bgm_loop]amix=inputs=2:duration=first:dropout_transition=2[a]"
+        )
+        cmd_final = [
+            "ffmpeg", "-y",
+            "-i", concatenated_video_path,
+            "-i", audio_path,
+            "-i", bgm_path,
+            "-filter_complex", f"{v_filter};{a_filter}",
+            "-map", "[v]",
+            "-map", "[a]",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "192k",
+            "-t", f"{total_dur:.2f}",
+            output_path
+        ]
+    else:
+        a_filter = "[1:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,volume=1.0[a]"
+        cmd_final = [
+            "ffmpeg", "-y",
+            "-i", concatenated_video_path,
+            "-i", audio_path,
+            "-filter_complex", f"{v_filter};{a_filter}",
+            "-map", "[v]",
+            "-map", "[a]",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "192k",
+            "-t", f"{total_dur:.2f}",
+            output_path
+        ]
+
+    log(f"Burning subtitles at bottom safe zone & mixing audio -> {output_path}...")
+    res_final = subprocess.run(cmd_final, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if res_final.returncode != 0:
+        raise Exception(f"FFmpeg multi-scene assembly error: {res_final.stderr}")
+    log(f"Multi-scene video rendered successfully: {output_path} ({os.path.getsize(output_path)} bytes)")
+
 async def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--job-id", required=True, help="GitHub Release tag/job identifier")
@@ -494,25 +646,18 @@ async def main():
         release_id = release["id"]
         assets = release.get("assets", [])
 
-        # Find config.json and media file
+        # Find config.json
         config_asset = None
-        media_asset = None
         for a in assets:
-            name = a["name"].lower()
-            if name == "config.json":
+            if a["name"].lower() == "config.json":
                 config_asset = a
-            elif any(name.endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".webp", ".mp4", ".mov", ".mkv"]):
-                media_asset = a
+                break
 
         if not config_asset:
             raise Exception("No 'config.json' found in release assets.")
-        if not media_asset:
-            raise Exception("No media file (image/video) found in release assets.")
 
         config_path = os.path.join(work_dir, "config.json")
-        media_path = os.path.join(work_dir, media_asset["name"])
         client.download_asset(config_asset, config_path)
-        client.download_asset(media_asset, media_path)
 
         with open(config_path, "r", encoding="utf-8") as f:
             config = json.load(f)
@@ -521,6 +666,8 @@ async def main():
         script = config.get("script", "").strip()
         topic = config.get("topic", "").strip()
         bgm_name = config.get("bgm", "music1.mp3")
+        mode = config.get("mode", "single")
+        scenes_meta = config.get("scenes", [])
         gemini_api_key = config.get("gemini_api_key") or os.environ.get("GEMINI_API_KEY", "")
 
         # Fallback if script is completely empty
@@ -537,13 +684,68 @@ async def main():
         ass_path = os.path.join(work_dir, "subtitles.ass")
         output_path = os.path.join(work_dir, "output_shorts.mp4")
 
-        # 1. Generate Voice & Subtitles
-        await generate_speech_and_subtitles(script, voice, audio_path, ass_path)
+        # Check for multi-scene assets (scene_1.jpg, scene_2.jpg, ...)
+        scene_assets = []
+        for a in assets:
+            aname = a["name"].lower()
+            if aname.startswith("scene_") and any(aname.endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".webp"]):
+                scene_assets.append(a)
 
-        # 2. Assemble Video with Cinema Blur, Poppins Subtitles & BGM
-        assemble_video(media_path, audio_path, ass_path, output_path, bgm_name=bgm_name)
+        def get_scene_index(asset):
+            m = re.search(r'scene_(\d+)', asset["name"].lower())
+            return int(m.group(1)) if m else 999
+        scene_assets.sort(key=get_scene_index)
 
-        # 3. Upload Result to GitHub Release
+        is_multi_scene = (mode == "multi_scene" or len(scene_assets) >= 2) and len(scene_assets) > 0
+
+        if is_multi_scene:
+            log(f"Multi-scene mode active! Found {len(scene_assets)} scene images.")
+            scene_paths = []
+            for sa in scene_assets:
+                sp = os.path.join(work_dir, sa["name"])
+                client.download_asset(sa, sp)
+                scene_paths.append(sp)
+
+            # 1. Generate Voice & Subtitles
+            await generate_speech_and_subtitles(script, voice, audio_path, ass_path)
+
+            # 2. Assemble Multi-Scene Video with Ken Burns & BGM
+            assemble_multi_scene_video(
+                scene_images=scene_paths,
+                scenes_meta=scenes_meta,
+                audio_path=audio_path,
+                ass_path=ass_path,
+                output_path=output_path,
+                bgm_name=bgm_name,
+                work_dir=work_dir
+            )
+        else:
+            # Single media mode (image or video from gallery)
+            media_asset = None
+            for a in assets:
+                name = a["name"].lower()
+                if any(name.endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".webp", ".mp4", ".mov", ".mkv"]) and not name.startswith("scene_"):
+                    media_asset = a
+                    break
+            if not media_asset:
+                for a in assets:
+                    name = a["name"].lower()
+                    if any(name.endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".webp", ".mp4", ".mov", ".mkv"]):
+                        media_asset = a
+                        break
+            if not media_asset:
+                raise Exception("No media file (image/video) found in release assets.")
+
+            media_path = os.path.join(work_dir, media_asset["name"])
+            client.download_asset(media_asset, media_path)
+
+            # 1. Generate Voice & Subtitles
+            await generate_speech_and_subtitles(script, voice, audio_path, ass_path)
+
+            # 2. Assemble Video with Cinema Blur, Poppins Subtitles & BGM
+            assemble_video(media_path, audio_path, ass_path, output_path, bgm_name=bgm_name)
+
+        # Upload Result to GitHub Release
         client.upload_asset(release_id, output_path, "output_shorts.mp4")
         log(f"Job {job_id} COMPLETED successfully!")
 
