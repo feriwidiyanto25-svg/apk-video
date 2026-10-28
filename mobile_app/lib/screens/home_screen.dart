@@ -241,21 +241,19 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final promptText = '''
 Bertindaklah sebagai produser konten video pendek viral kelas dunia (YouTube Shorts, TikTok, Instagram Reels, Facebook Reels / FB Pro).
-Buatkan naskah dan konsep visual 5 adegan (durasi 45-60 detik) mengenai topik berikut:
+Buatkan naskah dan konsep visual adegan cerita (durasi 45-60 detik) mengenai topik berikut:
 "$topic"
 
 ATURAN STRUKTUR AGAR PENONTON BETAH & VIRAL (HIGH RETENTION):
 1. title: Judul video yang SANGAT MEMIKAT, memicu rasa penasaran tinggi (curiosity gap), provokatif atau kontroversial, dilengkapi emoji dan hashtag (#shorts #reels). Maksimal 65 karakter.
 2. description: Deskripsi lengkap siap publish untuk Facebook Pro & YouTube Shorts. Memuat kalimat pembuka yang bikin penasaran, ajakan interaksi (komentar/like/share), dan 6-8 hashtag populer relevan.
-3. scenes: Tepat 5 adegan berurutan yang menceritakan topik tersebut secara dramatis dan memukau:
+3. scenes: Tentukan jumlah adegan secara DINAMIS menyesuaikan tema cerita (fleksibel antara 3 hingga 6 adegan, misal 4 adegan untuk alur punchline cepat, 5 adegan untuk misteri/fakta, atau 6 adegan untuk sejarah/alur bertahap).
    - ADEGAN 1 (🔥 THE HOOK - Detik 0-5): Pembuka yang menghentak dan menghentikan jempol penonton yang scroll (scroll-stopping hook). Gunakan fakta mengejutkan, paradox, atau mitos yang dibantah.
-   - ADEGAN 2 (Detik 5-15): Bangun ketegangan atau penjelasan misteri di balik topik tersebut.
-   - ADEGAN 3 (Detik 15-30): Ungkapkan fakta utama, bukti sejarah, atau inti rahasia yang mencengangkan penonton.
-   - ADEGAN 4 (Detik 30-45): Tambahkan detail atau twist tak terduga yang 99% orang tidak pernah tahu.
-   - ADEGAN 5 (Detik 45-60): Penutup yang berbobot dan lempar pertanyaan terbuka yang memicu penonton untuk berdebat di kolom komentar.
-4. narration pada setiap adegan: Bahasa Indonesia lisan yang santai, lugas, padat, dan mengalir alami (sekitar 22-28 kata per adegan, total 110-140 kata). Tuliskan HANYA kata-kata yang diucapkan narator secara langsung (voiceover only). JANGAN ada tanda kurung, intro 'Halo guys', atau instruksi teks.
-5. image_prompt pada setiap adegan: Deskripsi visual SANGAT DETAIL dalam Bahasa Inggris untuk generator gambar AI Imagen 3. Prompt HARUS BENAR-BENAR COCOK dan merefleksikan isi cerita topik di adegan tersebut. Sertakan detail visual sinematik: objek utama, latar belakang, pencahayaan dramatis, sudut kamera, kualitas (photorealistic, 8k resolution, vertical 9:16 composition, highly detailed, dramatic atmosphere, no text, no watermark).
-6. script: Gabungan lengkap narasi dari Adegan 1 sampai Adegan 5 (teks bersambung).
+   - ADEGAN-ADEGAN TENGAH: Membangun ketegangan, mengungkap fakta utama, bukti sejarah, misteri, atau twist mencengangkan yang 99% orang tidak tahu.
+   - ADEGAN TERAKHIR: Penutup yang berbobot dan lempar pertanyaan terbuka yang memicu penonton untuk berdebat di kolom komentar.
+4. narration pada setiap adegan: Bahasa Indonesia lisan yang santai, lugas, padat, dan mengalir alami (total gabungan seluruh narasi berkisar 110-140 kata untuk 45-60 detik). Tuliskan HANYA kata-kata yang diucapkan narator secara langsung (voiceover only). JANGAN ada tanda kurung, intro 'Halo guys', atau instruksi teks.
+5. image_prompt pada setiap adegan: Deskripsi visual SANGAT DETAIL dalam Bahasa Inggris untuk generator gambar AI. Prompt HARUS BENAR-BENAR COCOK dan merefleksikan isi cerita topik di adegan tersebut. Sertakan detail visual sinematik: objek utama, latar belakang, pencahayaan dramatis, sudut kamera, kualitas (photorealistic, 8k resolution, vertical 9:16 composition, highly detailed, dramatic atmosphere, no text, no watermark).
+6. script: Gabungan lengkap narasi dari seluruh adegan berurutan (teks bersambung).
 
 KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
 {
@@ -270,21 +268,6 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
     },
     {
       "scene_number": 2,
-      "narration": "...",
-      "image_prompt": "..."
-    },
-    {
-      "scene_number": 3,
-      "narration": "...",
-      "image_prompt": "..."
-    },
-    {
-      "scene_number": 4,
-      "narration": "...",
-      "image_prompt": "..."
-    },
-    {
-      "scene_number": 5,
       "narration": "...",
       "image_prompt": "..."
     }
@@ -440,12 +423,15 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
           });
         }
 
-        // Fallback jika adegan belum terurai: bagi script menjadi 5 adegan logis
+        // Fallback jika adegan belum terurai: bagi script menjadi beberapa adegan logis (3-6 adegan)
         if (parsedScenes.isEmpty && _scriptController.text.isNotEmpty) {
           final fullScript = _scriptController.text.trim();
           final words = fullScript.split(RegExp(r'\s+'));
-          final chunkSize = (words.length / 5).ceil();
-          for (int i = 0; i < 5; i++) {
+          int count = (words.length / 28).round();
+          if (count < 3) count = 3;
+          if (count > 6) count = 6;
+          final chunkSize = (words.length / count).ceil();
+          for (int i = 0; i < count; i++) {
             final start = i * chunkSize;
             final end = (start + chunkSize < words.length) ? start + chunkSize : words.length;
             final chunkText = (start < words.length) ? words.sublist(start, end).join(' ') : fullScript;
@@ -467,13 +453,13 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('✨ Naskah & 5 Ide Adegan berhasil dibuat ($usedModel)! Mulai membuat visual...'),
+              content: Text('✨ Naskah & ${parsedScenes.length} Ide Adegan berhasil dibuat ($usedModel)! Mulai membuat visual...'),
               backgroundColor: Colors.green,
             ),
           );
         }
 
-        // Otomatis generate 5 gambar untuk preview di HP (Opsi A)
+        // Otomatis generate gambar untuk preview di HP (Opsi A)
         _generateAllSceneImages();
       } else {
         throw Exception('Gagal membuat naskah: $errorMsg');
@@ -647,6 +633,55 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
       );
     }
   }
+
+  void _deleteScene(int index) {
+    if (_scenes.length <= 2) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Minimal harus ada 2 adegan dalam video.')),
+      );
+      return;
+    }
+    setState(() {
+      _scenes.removeAt(index);
+      for (int i = 0; i < _scenes.length; i++) {
+        _scenes[i]['scene_number'] = i + 1;
+      }
+      _scriptController.text = _scenes
+          .map((s) => (s['narration'] ?? '').toString().trim())
+          .where((t) => t.isNotEmpty)
+          .join(' ');
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Adegan berhasil dihapus.'), duration: Duration(seconds: 1)),
+    );
+  }
+
+  void _addNewScene() {
+    if (_scenes.length >= 8) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Maksimal 8 adegan untuk video durasi 60 detik.')),
+      );
+      return;
+    }
+    final newIndex = _scenes.length;
+    final topic = _topicController.text.trim();
+    setState(() {
+      _scenes.add({
+        'scene_number': newIndex + 1,
+        'narration': 'Lanjutan cerita menarik mengenai $topic...',
+        'image_prompt': 'Cinematic vertical 9:16 photorealistic visual, scene ${newIndex + 1} for topic: $topic, high quality, 8k resolution, dramatic lighting',
+        'image_bytes': null,
+        'is_loading': false,
+        'error': null,
+      });
+      _scriptController.text = _scenes
+          .map((s) => (s['narration'] ?? '').toString().trim())
+          .where((t) => t.isNotEmpty)
+          .join(' ');
+    });
+    _generateSingleSceneImage(newIndex);
+  }
+
   Future<void> _submitJob() async {
     final script = _scriptController.text.trim();
     final topic = _topicController.text.trim();
@@ -669,7 +704,7 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
       if (hasIncomplete) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Harap tunggu hingga ke-5 gambar visual AI selesai dibuat!'),
+            content: Text('Harap tunggu hingga seluruh gambar visual AI selesai dibuat!'),
             backgroundColor: Colors.orange,
           ),
         );
@@ -764,7 +799,7 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
           final s = _scenes[i];
           final imgNum = s['scene_number'] ?? (i + 1);
           final bytes = s['image_bytes'] as Uint8List;
-          setState(() => _submitStep = '3/4 Mengunggah visual adegan $imgNum/5...');
+          setState(() => _submitStep = '3/4 Mengunggah visual adegan $imgNum/${_scenes.length}...');
           await GitHubService.uploadReleaseAsset(
             repo: repo,
             token: token,
@@ -801,7 +836,7 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
         script: script,
         voice: _selectedVoice,
         status: 'rendering',
-        localMediaPath: isMultiScene ? '5 Adegan AI (Imagen 3)' : _selectedMedia!.path,
+        localMediaPath: isMultiScene ? '${_scenes.length} Adegan AI (Dinamis)' : _selectedMedia!.path,
         createdAt: DateTime.now(),
         videoTitle: title,
         videoDescription: description,
@@ -1170,7 +1205,7 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
             ),
             const SizedBox(height: 18),
 
-            // PREVIEW 5 ADEGAN VIDEO (Opsi A - Cek di HP sebelum Render)
+            // PREVIEW ADEGAN VIDEO DINAMIS (Opsi A - Cek di HP sebelum Render)
             if (_creationMode == 'ai' && _scenes.isNotEmpty) ...[
               Container(
                 padding: const EdgeInsets.all(14),
@@ -1186,9 +1221,9 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
                       children: [
                         const Icon(Icons.movie_filter, color: Colors.amber, size: 20),
                         const SizedBox(width: 8),
-                        const Text(
-                          'Preview 5 Adegan Video (Opsi A)',
-                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                        Text(
+                          'Preview Visual Adegan (${_scenes.length} Adegan)',
+                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                         ),
                         const Spacer(),
                         if (_isGeneratingImages)
@@ -1201,7 +1236,7 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
                               ),
                               const SizedBox(width: 8),
                               Text(
-                                '${_imageGeneratingIndex + 1}/5...',
+                                '${_imageGeneratingIndex + 1}/${_scenes.length}...',
                                 style: const TextStyle(fontSize: 12, color: Colors.amber, fontWeight: FontWeight.bold),
                               ),
                             ],
@@ -1210,19 +1245,48 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Periksa kesesuaian gambar tiap adegan sebelum dirender. Anda bisa generate ulang gambar tertentu jika belum cocok.',
+                      'Jumlah adegan otomatis menyesuaikan topik (${_scenes.length} adegan). Anda bisa tambah, hapus, atau ganti visual tiap adegan.',
                       style: TextStyle(fontSize: 12, color: Colors.grey[400]),
                     ),
                     const SizedBox(height: 12),
 
-                    // List Preview 5 Adegan Horizontal
+                    // List Preview Adegan Horizontal (Dinamis + Tombol Tambah di ujung)
                     SizedBox(
                       height: 320,
                       child: ListView.separated(
                         scrollDirection: Axis.horizontal,
-                        itemCount: _scenes.length,
+                        itemCount: _scenes.length + 1,
                         separatorBuilder: (_, __) => const SizedBox(width: 12),
                         itemBuilder: (ctx, idx) {
+                          // Item terakhir: Tombol Tambah Adegan
+                          if (idx == _scenes.length) {
+                            return Container(
+                              width: 140,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF1E293B).withOpacity(0.6),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Colors.white12),
+                              ),
+                              child: InkWell(
+                                onTap: _addNewScene,
+                                borderRadius: BorderRadius.circular(12),
+                                child: const Center(
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.add_photo_alternate_outlined, color: Colors.indigoAccent, size: 36),
+                                      SizedBox(height: 8),
+                                      Text(
+                                        '+ Tambah Adegan',
+                                        style: TextStyle(color: Colors.indigoAccent, fontSize: 12, fontWeight: FontWeight.bold),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          }
+
                           final sc = _scenes[idx];
                           final isHook = idx == 0;
                           final isEnd = idx == _scenes.length - 1;
@@ -1243,7 +1307,7 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                // Badge Adegan
+                                // Badge Adegan & Tombol Hapus
                                 Row(
                                   children: [
                                     Container(
@@ -1255,7 +1319,9 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
                                         borderRadius: BorderRadius.circular(6),
                                       ),
                                       child: Text(
-                                        isHook ? '🔥 ADEGAN 1 (HOOK)' : (isEnd ? '🌟 ADEGAN 5 (CTA)' : 'ADEGAN ${idx + 1}'),
+                                        isHook
+                                            ? '🔥 ADEGAN 1 (HOOK)'
+                                            : (isEnd ? '🌟 ADEGAN ${idx + 1} (CTA)' : 'ADEGAN ${idx + 1}'),
                                         style: TextStyle(
                                           fontSize: 10,
                                           fontWeight: FontWeight.bold,
@@ -1263,6 +1329,15 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
                                         ),
                                       ),
                                     ),
+                                    const Spacer(),
+                                    if (_scenes.length > 2)
+                                      InkWell(
+                                        onTap: () => _deleteScene(idx),
+                                        child: const Padding(
+                                          padding: EdgeInsets.all(2.0),
+                                          child: Icon(Icons.close, size: 14, color: Colors.grey),
+                                        ),
+                                      ),
                                   ],
                                 ),
                                 const SizedBox(height: 6),
@@ -1342,19 +1417,40 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
                     ),
                     const SizedBox(height: 8),
 
-                    // Tombol Regenerate Semua
-                    SizedBox(
-                      width: double.infinity,
-                      child: TextButton.icon(
-                        onPressed: _isGeneratingImages ? null : _generateAllSceneImages,
-                        icon: const Icon(Icons.autorenew, size: 16, color: Colors.amber),
-                        label: Text(
-                          _isGeneratingImages
-                              ? 'Sedang membuat visual adegan ${_imageGeneratingIndex + 1}/5...'
-                              : '🔄 Generate Ulang Semua 5 Gambar',
-                          style: const TextStyle(fontSize: 12, color: Colors.amber, fontWeight: FontWeight.bold),
+                    // Baris Tombol Aksi: Tambah Adegan & Regenerate Semua
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: _addNewScene,
+                            icon: const Icon(Icons.add, size: 14),
+                            label: const Text('Tambah Adegan', style: TextStyle(fontSize: 11)),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.indigoAccent,
+                              side: const BorderSide(color: Colors.indigoAccent),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                          ),
                         ),
-                      ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: _isGeneratingImages ? null : _generateAllSceneImages,
+                            icon: const Icon(Icons.autorenew, size: 14),
+                            label: Text(
+                              _isGeneratingImages
+                                  ? '${_imageGeneratingIndex + 1}/${_scenes.length}...'
+                                  : 'Regenerate Semua (${_scenes.length})',
+                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.amber[800],
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -1501,7 +1597,7 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
                             Icon(Icons.auto_awesome, size: 16, color: _useAiImages ? Colors.amber : Colors.grey),
                             const SizedBox(width: 6),
                             Text(
-                              '5 Visual AI (Imagen 3)',
+                              'Visual AI (Dinamis)',
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.bold,
@@ -1583,17 +1679,17 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
                         children: [
                           Text(
                             _scenes.isNotEmpty && _scenes.every((s) => s['image_bytes'] != null)
-                                ? '5 Gambar AI Siap Dirakit'
+                                ? '${_scenes.length} Gambar AI Siap Dirakit'
                                 : (_isGeneratingImages
-                                    ? 'Sedang membuat visual adegan ${_imageGeneratingIndex + 1}/5...'
+                                    ? 'Sedang membuat visual adegan ${_imageGeneratingIndex + 1}/${_scenes.length}...'
                                     : 'Visual AI akan dibuat otomatis'),
                             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                           ),
                           const SizedBox(height: 2),
                           Text(
                             _scenes.isNotEmpty && _scenes.every((s) => s['image_bytes'] != null)
-                                ? 'Video akan otomatis dirakit dengan 5 visual AI di atas, efek Ken Burns dinamis, dan subtitle karaoke di bawah.'
-                                : 'Ketik ide di atas dan klik "Buat Naskah AI" untuk menghasilkan 5 adegan dan visualnya.',
+                                ? 'Video akan otomatis dirakit dengan ${_scenes.length} visual adegan di atas, efek Ken Burns dinamis, dan subtitle karaoke di bawah.'
+                                : 'Ketik ide di atas dan klik "Buat Naskah AI" untuk menghasilkan naskah dan konsep adegannya.',
                             style: TextStyle(fontSize: 11, color: Colors.grey[400]),
                           ),
                         ],
