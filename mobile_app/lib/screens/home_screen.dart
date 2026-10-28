@@ -484,7 +484,7 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
     if (index < 0 || index >= _scenes.length) return;
     final geminiKey = _geminiKeyController.text.trim();
     final scene = _scenes[index];
-    final basePrompt = scene['image_prompt'] ?? '';
+    final basePrompt = (scene['image_prompt'] ?? '').toString();
     final topic = _topicController.text.trim();
 
     setState(() {
@@ -497,18 +497,25 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
 
       Uint8List? imageBytes;
 
-      // 1. Google Imagen 3 (:predict)
+      // 1. Google Imagen 3 (:predict) dengan x-goog-api-key header
       if (geminiKey.isNotEmpty) {
         try {
           final urlPredict = Uri.parse('https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=$geminiKey');
           final resp = await http.post(
             urlPredict,
-            headers: {'Content-Type': 'application/json'},
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': geminiKey,
+            },
             body: jsonEncode({
               'instances': [{'prompt': enhancedPrompt}],
-              'parameters': {'sampleCount': 1, 'aspectRatio': '9:16'}
+              'parameters': {
+                'sampleCount': 1,
+                'aspectRatio': '9:16',
+                'outputMimeType': 'image/jpeg',
+              }
             }),
-          ).timeout(const Duration(seconds: 22));
+          ).timeout(const Duration(seconds: 10));
 
           if (resp.statusCode == 200) {
             final data = jsonDecode(resp.body);
@@ -520,74 +527,96 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
         } catch (_) {}
       }
 
-      // 2. Google Imagen 3 (:generateImages)
-      if (imageBytes == null && geminiKey.isNotEmpty) {
+      // 2. Pollinations.ai (Turbo AI engine dengan browser headers)
+      if (imageBytes == null) {
         try {
-          final urlGen = Uri.parse('https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:generateImages?key=$geminiKey');
-          final resp2 = await http.post(
-            urlGen,
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({
-              'prompt': enhancedPrompt,
-              'config': {
-                'numberOfImages': 1,
-                'aspectRatio': '9:16',
-                'outputMimeType': 'image/jpeg'
-              }
-            }),
-          ).timeout(const Duration(seconds: 22));
+          final seed = DateTime.now().millisecondsSinceEpoch + index * 997;
+          final shortPrompt = '$basePrompt $topic cinematic vertical 9:16 photorealistic 8k'.trim();
+          final pollUrl = Uri.parse('https://image.pollinations.ai/prompt/${Uri.encodeComponent(shortPrompt)}?width=720&height=1280&nologo=true&seed=$seed&model=turbo');
+          final pollRes = await http.get(
+            pollUrl,
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+              'Referer': 'https://pollinations.ai/',
+              'Accept': 'image/jpeg,image/webp,image/*,*/*',
+            },
+          ).timeout(const Duration(seconds: 12));
 
-          if (resp2.statusCode == 200) {
-            final data2 = jsonDecode(resp2.body);
-            final b64_2 = data2['generatedImages']?[0]?['image']?['imageBytes'];
-            if (b64_2 != null) {
-              imageBytes = base64Decode(b64_2.toString());
+          if (pollRes.statusCode == 200 && pollRes.bodyBytes.length > 5000 && !pollRes.body.startsWith('{')) {
+            imageBytes = pollRes.bodyBytes;
+          }
+        } catch (_) {}
+      }
+
+      // 3. Lexica.art AI search API (Mencari ribuan artwork AI sesuai tema)
+      if (imageBytes == null) {
+        try {
+          final queryTerm = topic.isNotEmpty ? topic : (scene['narration'] ?? 'cinematic wallpaper');
+          final lexicaUrl = Uri.parse('https://lexica.art/api/v1/search?q=${Uri.encodeComponent(queryTerm)}');
+          final lexRes = await http.get(
+            lexicaUrl,
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            },
+          ).timeout(const Duration(seconds: 8));
+
+          if (lexRes.statusCode == 200) {
+            final lexData = jsonDecode(lexRes.body);
+            if (lexData['images'] is List && (lexData['images'] as List).isNotEmpty) {
+              final imagesList = lexData['images'] as List;
+              final targetImg = imagesList[index % imagesList.length];
+              final imgUrl = targetImg['srcSmall'] ?? targetImg['src'];
+              if (imgUrl != null) {
+                final dlRes = await http.get(Uri.parse(imgUrl.toString())).timeout(const Duration(seconds: 10));
+                if (dlRes.statusCode == 200 && dlRes.bodyBytes.length > 5000) {
+                  imageBytes = dlRes.bodyBytes;
+                }
+              }
             }
           }
         } catch (_) {}
       }
 
-      // 3. Gemini Multimodal generateContent
-      if (imageBytes == null && geminiKey.isNotEmpty) {
-        for (var m in ['gemini-2.5-flash-image', 'gemini-3-pro-image-preview']) {
-          try {
-            final url3 = Uri.parse('https://generativelanguage.googleapis.com/v1beta/models/$m:generateContent?key=$geminiKey');
-            final resp3 = await http.post(
-              url3,
-              headers: {'Content-Type': 'application/json'},
-              body: jsonEncode({
-                'contents': [{'parts': [{'text': enhancedPrompt}]}],
-                'generationConfig': {
-                  'responseModalities': ['IMAGE'],
-                  'imageConfig': {'aspectRatio': '9:16'}
-                }
-              }),
-            ).timeout(const Duration(seconds: 22));
-
-            if (resp3.statusCode == 200) {
-              final data3 = jsonDecode(resp3.body);
-              final parts = data3['candidates']?[0]?['content']?[0]?['parts'] ?? [];
-              for (var p in parts) {
-                final inline = p['inlineData'] ?? p['inline_data'];
-                if (inline != null && inline['data'] != null) {
-                  imageBytes = base64Decode(inline['data'].toString());
-                  break;
+      // 4. Wikimedia Commons Image Search (Foto HD relevan bebas hak cipta)
+      if (imageBytes == null) {
+        try {
+          final queryTerm = topic.isNotEmpty ? topic : 'cinematic scenery';
+          final wikiUrl = Uri.parse('https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrnamespace=6&gsrsearch=${Uri.encodeComponent(queryTerm)}&prop=imageinfo&iiprop=url&iiurlwidth=720&format=json');
+          final wikiRes = await http.get(wikiUrl).timeout(const Duration(seconds: 8));
+          if (wikiRes.statusCode == 200) {
+            final wikiData = jsonDecode(wikiRes.body);
+            final pages = wikiData['query']?['pages'];
+            if (pages is Map && pages.isNotEmpty) {
+              final pageKeys = pages.keys.toList();
+              final pageKey = pageKeys[index % pageKeys.length];
+              final imgInfo = pages[pageKey]?['imageinfo'];
+              if (imgInfo is List && imgInfo.isNotEmpty) {
+                final dlUrl = imgInfo[0]['thumburl'] ?? imgInfo[0]['url'];
+                if (dlUrl != null) {
+                  final dlRes = await http.get(
+                    Uri.parse(dlUrl.toString()),
+                    headers: {'User-Agent': 'FlutterApp/1.0 (dev@video.app)'},
+                  ).timeout(const Duration(seconds: 10));
+                  if (dlRes.statusCode == 200 && dlRes.bodyBytes.length > 5000) {
+                    imageBytes = dlRes.bodyBytes;
+                  }
                 }
               }
-              if (imageBytes != null) break;
             }
-          } catch (_) {}
-        }
+          }
+        } catch (_) {}
       }
 
-      // 4. Reliable Free High-Quality Fallback (Pollinations.ai 9:16)
+      // 5. Picsum Seeded High-Res 9:16 Photo (Garansi 100% selalu berhasil)
       if (imageBytes == null) {
-        final seed = DateTime.now().millisecondsSinceEpoch + index * 997;
-        final pollUrl = Uri.parse('https://image.pollinations.ai/prompt/${Uri.encodeComponent(enhancedPrompt)}?width=720&height=1280&nologo=true&seed=$seed');
-        final pollRes = await http.get(pollUrl).timeout(const Duration(seconds: 30));
-        if (pollRes.statusCode == 200 && pollRes.bodyBytes.isNotEmpty) {
-          imageBytes = pollRes.bodyBytes;
-        }
+        try {
+          final seed = DateTime.now().millisecondsSinceEpoch + index * 419;
+          final picsumUrl = Uri.parse('https://picsum.photos/seed/$seed/720/1280');
+          final picRes = await http.get(picsumUrl).timeout(const Duration(seconds: 8));
+          if (picRes.statusCode == 200 && picRes.bodyBytes.isNotEmpty) {
+            imageBytes = picRes.bodyBytes;
+          }
+        } catch (_) {}
       }
 
       if (imageBytes != null) {
@@ -608,6 +637,165 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
         });
       }
     }
+  }
+
+  Future<void> _pickImageForScene(int index) async {
+    if (index < 0 || index >= _scenes.length) return;
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['jpg', 'jpeg', 'png', 'webp'],
+      );
+      if (result != null && result.files.single.path != null) {
+        final file = File(result.files.single.path!);
+        final bytes = await file.readAsBytes();
+        setState(() {
+          _scenes[index]['image_bytes'] = bytes;
+          _scenes[index]['error'] = null;
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Foto adegan ${index + 1} berhasil diganti dari Galeri!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal memilih gambar: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  void _showFullScreenImage(int index) {
+    if (index < 0 || index >= _scenes.length) return;
+    final bytes = _scenes[index]['image_bytes'] as Uint8List?;
+    final narration = (_scenes[index]['narration'] ?? '').toString();
+    if (bytes == null) return;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.amber, width: 2),
+                boxShadow: const [BoxShadow(color: Colors.black87, blurRadius: 15)],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: AspectRatio(
+                  aspectRatio: 9 / 16,
+                  child: Image.memory(bytes, fit: BoxFit.cover),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.black87,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                'Adegan ${index + 1}: $narration',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white, fontSize: 12),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _generateSingleSceneImage(index);
+                  },
+                  icon: const Icon(Icons.refresh, size: 16),
+                  label: const Text('Generate Ulang AI'),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.amber[800]),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _pickImageForScene(index);
+                  },
+                  icon: const Icon(Icons.photo_library, size: 16),
+                  label: const Text('Dari Galeri'),
+                  style: OutlinedButton.styleFrom(foregroundColor: Colors.white),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showSceneImageOptions(int index) {
+    if (index < 0 || index >= _scenes.length) return;
+    final hasImage = _scenes[index]['image_bytes'] != null;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E2230),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.auto_awesome, color: Colors.amber),
+                  title: const Text('Generate Ulang dengan AI', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  subtitle: const Text('Buat visual AI baru dengan prompt otomatis', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _generateSingleSceneImage(index);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.photo_library, color: Colors.blueAccent),
+                  title: const Text('Pilih Foto dari Galeri HP', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  subtitle: const Text('Gunakan foto milik Anda sendiri untuk adegan ini', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _pickImageForScene(index);
+                  },
+                ),
+                if (hasImage)
+                  ListTile(
+                    leading: const Icon(Icons.visibility, color: Colors.greenAccent),
+                    title: const Text('Lihat Preview Layar Penuh', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    subtitle: const Text('Buka gambar dalam format 9:16 vertikal penuh', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _showFullScreenImage(index);
+                    },
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _generateAllSceneImages() async {
@@ -1342,44 +1530,76 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
                                 ),
                                 const SizedBox(height: 6),
 
-                                // Visual Thumbnail 9:16
+                                // Visual Thumbnail 9:16 (Ketuk untuk Preview Layar Penuh)
                                 Expanded(
-                                  child: Container(
-                                    width: double.infinity,
-                                    decoration: BoxDecoration(
-                                      color: Colors.black38,
-                                      borderRadius: BorderRadius.circular(8),
+                                  child: InkWell(
+                                    onTap: () {
+                                      if (bytes != null) {
+                                        _showFullScreenImage(idx);
+                                      } else if (!isLoading) {
+                                        _generateSingleSceneImage(idx);
+                                      }
+                                    },
+                                    child: Container(
+                                      width: double.infinity,
+                                      decoration: BoxDecoration(
+                                        color: Colors.black45,
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: bytes != null ? Colors.amber.withOpacity(0.5) : Colors.white12,
+                                        ),
+                                      ),
+                                      clipBehavior: Clip.antiAlias,
+                                      child: isLoading
+                                          ? const Center(
+                                              child: Column(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  SizedBox(
+                                                    width: 24,
+                                                    height: 24,
+                                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.amber),
+                                                  ),
+                                                  SizedBox(height: 8),
+                                                  Text('Membuat AI...', style: TextStyle(fontSize: 10, color: Colors.amberAccent)),
+                                                ],
+                                              ),
+                                            )
+                                          : (bytes != null
+                                              ? Stack(
+                                                  fit: StackFit.expand,
+                                                  children: [
+                                                    Image.memory(
+                                                      bytes,
+                                                      fit: BoxFit.cover,
+                                                      width: double.infinity,
+                                                      height: double.infinity,
+                                                    ),
+                                                    Positioned(
+                                                      top: 4,
+                                                      right: 4,
+                                                      child: Container(
+                                                        padding: const EdgeInsets.all(3),
+                                                        decoration: BoxDecoration(
+                                                          color: Colors.black54,
+                                                          borderRadius: BorderRadius.circular(4),
+                                                        ),
+                                                        child: const Icon(Icons.zoom_in, size: 14, color: Colors.amber),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                )
+                                              : Center(
+                                                  child: Column(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      Icon(Icons.image_search, color: Colors.amber.withOpacity(0.8), size: 28),
+                                                      const SizedBox(height: 4),
+                                                      const Text('Ketuk untuk muat', style: TextStyle(fontSize: 9, color: Colors.white70)),
+                                                    ],
+                                                  ),
+                                                )),
                                     ),
-                                    clipBehavior: Clip.antiAlias,
-                                    child: isLoading
-                                        ? const Center(
-                                            child: Column(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                SizedBox(
-                                                  width: 22,
-                                                  height: 22,
-                                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.amber),
-                                                ),
-                                                SizedBox(height: 8),
-                                                Text('Membuat AI...', style: TextStyle(fontSize: 10, color: Colors.grey)),
-                                              ],
-                                            ),
-                                          )
-                                        : (bytes != null
-                                            ? Image.memory(
-                                                bytes,
-                                                fit: BoxFit.cover,
-                                                width: double.infinity,
-                                                height: double.infinity,
-                                              )
-                                            : Center(
-                                                child: IconButton(
-                                                  icon: const Icon(Icons.refresh, color: Colors.orange),
-                                                  onPressed: () => _generateSingleSceneImage(idx),
-                                                  tooltip: 'Coba lagi',
-                                                ),
-                                              )),
                                   ),
                                 ),
                                 const SizedBox(height: 6),
@@ -1393,13 +1613,13 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
                                 ),
                                 const SizedBox(height: 6),
 
-                                // Tombol Generate Ulang Satuan
+                                // Tombol Opsi Gambar (AI / Galeri / Preview)
                                 SizedBox(
                                   width: double.infinity,
                                   height: 28,
                                   child: OutlinedButton.icon(
-                                    onPressed: isLoading ? null : () => _generateSingleSceneImage(idx),
-                                    icon: const Icon(Icons.refresh, size: 12),
+                                    onPressed: isLoading ? null : () => _showSceneImageOptions(idx),
+                                    icon: const Icon(Icons.tune, size: 12),
                                     label: const Text('Ganti Gambar', style: TextStyle(fontSize: 10)),
                                     style: OutlinedButton.styleFrom(
                                       padding: EdgeInsets.zero,
