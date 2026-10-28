@@ -518,25 +518,23 @@ def assemble_multi_scene_video(scene_images, scenes_meta, audio_path, ass_path, 
 
         cmd_clip = [
             "ffmpeg", "-y",
-            "-loop", "1",
-            "-t", f"{dur:.3f}",
             "-i", img_path,
             "-vf", zoom_filter,
-            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20",
-            "-r", "30",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+            "-t", f"{dur:.3f}",
             "-pix_fmt", "yuv420p",
             clip_path
         ]
         log(f"Rendering scene clip {idx+1}/{num_scenes} ({dur:.2f}s)...")
         res = subprocess.run(cmd_clip, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if res.returncode != 0:
-            log(f"Warning: Ken Burns failed for scene {idx}, falling back to static 9:16 loop")
+            log(f"Warning: Ken Burns failed for scene {idx}: {res.stderr[:200]}, falling back to static 9:16 loop")
             fallback_filter = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,format=yuv420p"
             cmd_fallback = [
                 "ffmpeg", "-y",
                 "-loop", "1",
-                "-t", f"{dur:.3f}",
                 "-i", img_path,
+                "-t", f"{dur:.3f}",
                 "-vf", fallback_filter,
                 "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20",
                 "-r", "30",

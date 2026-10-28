@@ -240,20 +240,21 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       final promptText = '''
-Bertindaklah sebagai produser konten video pendek viral kelas dunia (YouTube Shorts, TikTok, Instagram Reels, Facebook Reels / FB Pro).
-Buatkan naskah dan konsep visual adegan cerita (durasi 45-60 detik) mengenai topik berikut:
+Bertindaklah sebagai Scriptwriter & Sutradara Konten Video Pendek Papan Atas (Viral Retention Specialist untuk YouTube Shorts, Instagram Reels, FB Pro, dan TikTok).
+Tugas Anda: Buatkan naskah yang MENGHENTAK, SANGAT MEMIKAT, dan konsep visual per adegan untuk video durasi 45-60 detik mengenai topik berikut:
 "$topic"
 
-ATURAN STRUKTUR AGAR PENONTON BETAH & VIRAL (HIGH RETENTION):
-1. title: Judul video yang SANGAT MEMIKAT, memicu rasa penasaran tinggi (curiosity gap), provokatif atau kontroversial, dilengkapi emoji dan hashtag (#shorts #reels). Maksimal 65 karakter.
-2. description: Deskripsi lengkap siap publish untuk Facebook Pro & YouTube Shorts. Memuat kalimat pembuka yang bikin penasaran, ajakan interaksi (komentar/like/share), dan 6-8 hashtag populer relevan.
-3. scenes: Tentukan jumlah adegan secara DINAMIS menyesuaikan tema cerita (fleksibel antara 3 hingga 6 adegan, misal 4 adegan untuk alur punchline cepat, 5 adegan untuk misteri/fakta, atau 6 adegan untuk sejarah/alur bertahap).
-   - ADEGAN 1 (🔥 THE HOOK - Detik 0-5): Pembuka yang menghentak dan menghentikan jempol penonton yang scroll (scroll-stopping hook). Gunakan fakta mengejutkan, paradox, atau mitos yang dibantah.
-   - ADEGAN-ADEGAN TENGAH: Membangun ketegangan, mengungkap fakta utama, bukti sejarah, misteri, atau twist mencengangkan yang 99% orang tidak tahu.
-   - ADEGAN TERAKHIR: Penutup yang berbobot dan lempar pertanyaan terbuka yang memicu penonton untuk berdebat di kolom komentar.
-4. narration pada setiap adegan: Bahasa Indonesia lisan yang santai, lugas, padat, dan mengalir alami (total gabungan seluruh narasi berkisar 110-140 kata untuk 45-60 detik). Tuliskan HANYA kata-kata yang diucapkan narator secara langsung (voiceover only). JANGAN ada tanda kurung, intro 'Halo guys', atau instruksi teks.
-5. image_prompt pada setiap adegan: Deskripsi visual SANGAT DETAIL dalam Bahasa Inggris untuk generator gambar AI. Prompt HARUS BENAR-BENAR COCOK dan merefleksikan isi cerita topik di adegan tersebut. Sertakan detail visual sinematik: objek utama, latar belakang, pencahayaan dramatis, sudut kamera, kualitas (photorealistic, 8k resolution, vertical 9:16 composition, highly detailed, dramatic atmosphere, no text, no watermark).
-6. script: Gabungan lengkap narasi dari seluruh adegan berurutan (teks bersambung).
+PANDUAN VIRAL & RETENSI TINGGI (HIGH RETENTION):
+1. title: Judul super memikat (maksimal 60 karakter), mengandung misteri/kontradiksi yang bikin penasaran (curiosity gap), dilengkapi emoji menarik dan hashtag (#shorts #fakta).
+2. description: Deskripsi lengkap siap tayang untuk FB Pro & YouTube Shorts. Memuat kalimat pembuka yang bikin penasaran, ajakan interaksi (komentar/like/share), dan 6-8 hashtag populer relevan.
+3. scenes: Tentukan jumlah adegan secara DINAMIS (4 hingga 6 adegan) menyesuaikan alur cerita:
+   - 🔥 ADEGAN 1 (EXTREME HOOK - Detik 0-4): JANGAN gunakan sapaan ("Halo guys", "Tahukah kalian", "Pada zaman dahulu"). Mulai LANGSUNG dengan fakta mengejutkan, mitos yang dibantah, atau pernyataan provokatif yang menampar logika penonton agar jempol mereka berhenti scroll!
+   - ADEGAN TENGAH: Bangun rasa penasaran, kupas rahasia/fakta ilmiah/sejarah yang 99% orang belum tahu secara runut dan padat.
+   - ADEGAN TERAKHIR: Penutup klimaks dan lempar pertanyaan tebak-tebakan atau perdebatan terbuka untuk memicu penonton berdebat di kolom komentar.
+4. narration: Bahasa Indonesia lisan yang santai, tegas, berbobot, dan mengalir cepat (total gabungan seluruh narasi 110-140 kata untuk 45-60 detik). Tuliskan HANYA kata-kata yang diucapkan suara narasi (voiceover only). Dilarang menulis tanda kurung atau petunjuk teks.
+5. image_prompt: Deskripsi visual sinematik BAHASA INGGRIS yang SANGAT DETAIL dan 100% RELEVAN dengan cerita adegan tersebut (subjek utama, pencahayaan dramatis, detail kostum/objek, suasana dramatis, sudut kamera, cinematic vertical 9:16, photorealistic 8k, highly detailed, no text, no watermark).
+6. search_keywords: 2-3 KATA KUNCI BAHASA INGGRIS yang sangat spesifik dan akurat untuk adegan ini (contoh: "pirate ship storm", "pirate captain eyepatch closeup", "dark wooden ship cabin"). KATA KUNCI INI HARUS TEPAT SASARAN.
+7. script: Gabungan lengkap narasi dari seluruh adegan berurutan.
 
 KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
 {
@@ -264,12 +265,8 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
     {
       "scene_number": 1,
       "narration": "...",
-      "image_prompt": "..."
-    },
-    {
-      "scene_number": 2,
-      "narration": "...",
-      "image_prompt": "..."
+      "image_prompt": "...",
+      "search_keywords": "..."
     }
   ]
 }
@@ -399,6 +396,7 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
                     'scene_number': sc['scene_number'] ?? (i + 1),
                     'narration': sc['narration']?.toString().trim() ?? '',
                     'image_prompt': sc['image_prompt']?.toString().trim() ?? '',
+                    'search_keywords': sc['search_keywords']?.toString().trim() ?? '',
                     'image_bytes': null,
                     'is_loading': false,
                     'error': null,
@@ -439,6 +437,7 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
               'scene_number': i + 1,
               'narration': chunkText,
               'image_prompt': 'Cinematic vertical 9:16 photorealistic visual, scene ${i + 1} for topic: $topic, high quality, 8k resolution, dramatic lighting',
+              'search_keywords': topic.replaceAll(RegExp(r'[^a-zA-Z0-9 ]'), ' ').trim(),
               'image_bytes': null,
               'is_loading': false,
               'error': null,
@@ -484,7 +483,8 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
     if (index < 0 || index >= _scenes.length) return;
     final geminiKey = _geminiKeyController.text.trim();
     final scene = _scenes[index];
-    final basePrompt = (scene['image_prompt'] ?? '').toString();
+    final basePrompt = (scene['image_prompt'] ?? '').toString().trim();
+    final searchKeywords = (scene['search_keywords'] ?? '').toString().trim();
     final topic = _topicController.text.trim();
 
     setState(() {
@@ -493,11 +493,15 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
     });
 
     try {
-      final enhancedPrompt = '$basePrompt, topic: $topic, vertical 9:16 aspect ratio, cinematic lighting, photorealistic, 8k resolution, dramatic atmosphere, highly detailed, master photography, no text, no watermark';
-
       Uint8List? imageBytes;
 
-      // 1. Google Imagen 3 (:predict) dengan x-goog-api-key header
+      // Persiapkan prompt bahasa Inggris yang kuat dan spesifik
+      final String effectivePrompt = basePrompt.isNotEmpty
+          ? basePrompt
+          : (searchKeywords.isNotEmpty ? '$searchKeywords cinematic' : '$topic cinematic vertical 9:16');
+      final String fullAiPrompt = '$effectivePrompt, vertical 9:16 aspect ratio, cinematic lighting, photorealistic, 8k resolution, dramatic atmosphere, highly detailed, master photography, no watermark';
+
+      // 1. Google Imagen 3 (Jika API key mendukung Imagen 3)
       if (geminiKey.isNotEmpty) {
         try {
           final urlPredict = Uri.parse('https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=$geminiKey');
@@ -508,14 +512,14 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
               'x-goog-api-key': geminiKey,
             },
             body: jsonEncode({
-              'instances': [{'prompt': enhancedPrompt}],
+              'instances': [{'prompt': fullAiPrompt}],
               'parameters': {
                 'sampleCount': 1,
                 'aspectRatio': '9:16',
                 'outputMimeType': 'image/jpeg',
               }
             }),
-          ).timeout(const Duration(seconds: 10));
+          ).timeout(const Duration(seconds: 8));
 
           if (resp.statusCode == 200) {
             final data = jsonDecode(resp.body);
@@ -527,12 +531,12 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
         } catch (_) {}
       }
 
-      // 2. Pollinations.ai (Turbo AI engine dengan browser headers)
+      // 2. Pollinations AI Flux / Sana (Bebas Biaya, Kualitas Tinggi, Akurat Sesuai Prompt)
       if (imageBytes == null) {
         try {
           final seed = DateTime.now().millisecondsSinceEpoch + index * 997;
-          final shortPrompt = '$basePrompt $topic cinematic vertical 9:16 photorealistic 8k'.trim();
-          final pollUrl = Uri.parse('https://image.pollinations.ai/prompt/${Uri.encodeComponent(shortPrompt)}?width=720&height=1280&nologo=true&seed=$seed&model=turbo');
+          // Perhatikan: JANGAN sertakan nologo=true karena memicu limit pembayaran HTTP 402
+          final pollUrl = Uri.parse('https://image.pollinations.ai/prompt/${Uri.encodeComponent(fullAiPrompt)}?model=flux&width=720&height=1280&seed=$seed');
           final pollRes = await http.get(
             pollUrl,
             headers: {
@@ -540,7 +544,7 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
               'Referer': 'https://pollinations.ai/',
               'Accept': 'image/jpeg,image/webp,image/*,*/*',
             },
-          ).timeout(const Duration(seconds: 12));
+          ).timeout(const Duration(seconds: 15));
 
           if (pollRes.statusCode == 200 && pollRes.bodyBytes.length > 5000 && !pollRes.body.startsWith('{')) {
             imageBytes = pollRes.bodyBytes;
@@ -548,40 +552,13 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
         } catch (_) {}
       }
 
-      // 3. Lexica.art AI search API (Mencari ribuan artwork AI sesuai tema)
+      // 3. Wikimedia Commons HD Search (Pencarian visual nyata & sejarah menggunakan kata kunci Inggris akurat)
       if (imageBytes == null) {
         try {
-          final queryTerm = topic.isNotEmpty ? topic : (scene['narration'] ?? 'cinematic wallpaper');
-          final lexicaUrl = Uri.parse('https://lexica.art/api/v1/search?q=${Uri.encodeComponent(queryTerm)}');
-          final lexRes = await http.get(
-            lexicaUrl,
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-            },
-          ).timeout(const Duration(seconds: 8));
-
-          if (lexRes.statusCode == 200) {
-            final lexData = jsonDecode(lexRes.body);
-            if (lexData['images'] is List && (lexData['images'] as List).isNotEmpty) {
-              final imagesList = lexData['images'] as List;
-              final targetImg = imagesList[index % imagesList.length];
-              final imgUrl = targetImg['srcSmall'] ?? targetImg['src'];
-              if (imgUrl != null) {
-                final dlRes = await http.get(Uri.parse(imgUrl.toString())).timeout(const Duration(seconds: 10));
-                if (dlRes.statusCode == 200 && dlRes.bodyBytes.length > 5000) {
-                  imageBytes = dlRes.bodyBytes;
-                }
-              }
-            }
-          }
-        } catch (_) {}
-      }
-
-      // 4. Wikimedia Commons Image Search (Foto HD relevan bebas hak cipta)
-      if (imageBytes == null) {
-        try {
-          final queryTerm = topic.isNotEmpty ? topic : 'cinematic scenery';
-          final wikiUrl = Uri.parse('https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrnamespace=6&gsrsearch=${Uri.encodeComponent(queryTerm)}&prop=imageinfo&iiprop=url&iiurlwidth=720&format=json');
+          final queryKeywords = searchKeywords.isNotEmpty
+              ? searchKeywords
+              : (basePrompt.split(',').first.trim().isNotEmpty ? basePrompt.split(',').first.trim() : topic);
+          final wikiUrl = Uri.parse('https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrnamespace=6&gsrsearch=${Uri.encodeComponent(queryKeywords)}&prop=imageinfo&iiprop=url&iiurlwidth=1080&format=json');
           final wikiRes = await http.get(wikiUrl).timeout(const Duration(seconds: 8));
           if (wikiRes.statusCode == 200) {
             final wikiData = jsonDecode(wikiRes.body);
@@ -595,7 +572,7 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
                 if (dlUrl != null) {
                   final dlRes = await http.get(
                     Uri.parse(dlUrl.toString()),
-                    headers: {'User-Agent': 'FlutterApp/1.0 (dev@video.app)'},
+                    headers: {'User-Agent': 'ShortsCreatorApp/2.0 (contact@creative.app)'},
                   ).timeout(const Duration(seconds: 10));
                   if (dlRes.statusCode == 200 && dlRes.bodyBytes.length > 5000) {
                     imageBytes = dlRes.bodyBytes;
@@ -607,14 +584,54 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
         } catch (_) {}
       }
 
-      // 5. Picsum Seeded High-Res 9:16 Photo (Garansi 100% selalu berhasil)
+      // 4. Pollinations AI Standard Engine (Cadangan AI Alternatif jika model Flux padat)
       if (imageBytes == null) {
         try {
-          final seed = DateTime.now().millisecondsSinceEpoch + index * 419;
-          final picsumUrl = Uri.parse('https://picsum.photos/seed/$seed/720/1280');
-          final picRes = await http.get(picsumUrl).timeout(const Duration(seconds: 8));
-          if (picRes.statusCode == 200 && picRes.bodyBytes.isNotEmpty) {
-            imageBytes = picRes.bodyBytes;
+          final seed = DateTime.now().millisecondsSinceEpoch + index * 613;
+          final fallbackPrompt = searchKeywords.isNotEmpty ? '$searchKeywords cinematic vertical 8k' : '$topic cinematic vertical';
+          final pollUrl = Uri.parse('https://image.pollinations.ai/prompt/${Uri.encodeComponent(fallbackPrompt)}?width=720&height=1280&seed=$seed');
+          final pollRes = await http.get(
+            pollUrl,
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+              'Referer': 'https://pollinations.ai/',
+            },
+          ).timeout(const Duration(seconds: 12));
+
+          if (pollRes.statusCode == 200 && pollRes.bodyBytes.length > 5000 && !pollRes.body.startsWith('{')) {
+            imageBytes = pollRes.bodyBytes;
+          }
+        } catch (_) {}
+      }
+
+      // 5. Wikimedia Commons Topik Luas (Jika adegan sangat unik, cari tema umum topik dalam bahasa Inggris)
+      if (imageBytes == null) {
+        try {
+          final generalTopic = searchKeywords.isNotEmpty
+              ? searchKeywords.split(' ').first
+              : topic.replaceAll(RegExp(r'[^a-zA-Z0-9 ]'), ' ').trim();
+          final wikiUrl = Uri.parse('https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrnamespace=6&gsrsearch=${Uri.encodeComponent(generalTopic)}&prop=imageinfo&iiprop=url&iiurlwidth=1080&format=json');
+          final wikiRes = await http.get(wikiUrl).timeout(const Duration(seconds: 8));
+          if (wikiRes.statusCode == 200) {
+            final wikiData = jsonDecode(wikiRes.body);
+            final pages = wikiData['query']?['pages'];
+            if (pages is Map && pages.isNotEmpty) {
+              final pageKeys = pages.keys.toList();
+              final pageKey = pageKeys[index % pageKeys.length];
+              final imgInfo = pages[pageKey]?['imageinfo'];
+              if (imgInfo is List && imgInfo.isNotEmpty) {
+                final dlUrl = imgInfo[0]['thumburl'] ?? imgInfo[0]['url'];
+                if (dlUrl != null) {
+                  final dlRes = await http.get(
+                    Uri.parse(dlUrl.toString()),
+                    headers: {'User-Agent': 'ShortsCreatorApp/2.0 (contact@creative.app)'},
+                  ).timeout(const Duration(seconds: 10));
+                  if (dlRes.statusCode == 200 && dlRes.bodyBytes.length > 5000) {
+                    imageBytes = dlRes.bodyBytes;
+                  }
+                }
+              }
+            }
           }
         } catch (_) {}
       }
