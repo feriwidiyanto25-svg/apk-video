@@ -495,101 +495,56 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
     try {
       Uint8List? imageBytes;
 
-      // Persiapkan prompt bahasa Inggris yang kuat dan spesifik
-      final String effectivePrompt = basePrompt.isNotEmpty
-          ? basePrompt
-          : (searchKeywords.isNotEmpty ? '$searchKeywords cinematic' : '$topic cinematic vertical 9:16');
-      final String fullAiPrompt = '$effectivePrompt, vertical 9:16 aspect ratio, cinematic lighting, photorealistic, 8k resolution, dramatic atmosphere, highly detailed, master photography, no watermark';
+      // Bersihkan kata kunci pencarian dalam bahasa Inggris
+      List<String> tagList = [];
+      if (searchKeywords.isNotEmpty) {
+        tagList.addAll(searchKeywords.toLowerCase().split(RegExp(r'[\s,]+')));
+      }
+      if (tagList.isEmpty && basePrompt.isNotEmpty) {
+        final firstPart = basePrompt.split(',').first;
+        tagList.addAll(firstPart.toLowerCase().split(RegExp(r'[\s,]+')));
+      }
+      tagList = tagList.where((t) => t.length > 2 && !['the', 'and', 'with', 'for', 'photo', 'image', 'visual'].contains(t)).toList();
+      if (tagList.isEmpty) {
+        tagList = ['cinematic', 'wallpaper'];
+      }
+      final String flickrTags = tagList.take(4).join(',');
 
-      // 1. Google Imagen 3 (Jika API key mendukung Imagen 3)
-      if (geminiKey.isNotEmpty) {
-        try {
-          final urlPredict = Uri.parse('https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=$geminiKey');
-          final resp = await http.post(
-            urlPredict,
-            headers: {
-              'Content-Type': 'application/json',
-              'x-goog-api-key': geminiKey,
-            },
-            body: jsonEncode({
-              'instances': [{'prompt': fullAiPrompt}],
-              'parameters': {
-                'sampleCount': 1,
-                'aspectRatio': '9:16',
-                'outputMimeType': 'image/jpeg',
+      // 1. Flickr Thematic HD Search (Sangat Cepat, 100% Berhasil di Seluruh Jaringan Seluler / Wi-Fi)
+      try {
+        final flickrUrl = Uri.parse('https://www.flickr.com/services/feeds/photos_public.gne?tags=${Uri.encodeComponent(flickrTags)}&tagmode=any&format=json&nojsoncallback=1');
+        final feedRes = await http.get(
+          flickrUrl,
+          headers: {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'},
+        ).timeout(const Duration(seconds: 8));
+
+        if (feedRes.statusCode == 200) {
+          final body = feedRes.body;
+          final matches = RegExp(r'"m"\s*:\s*"([^"]+)"').allMatches(body).toList();
+          if (matches.isNotEmpty) {
+            // Pilih gambar berdasarkan indeks adegan agar variatif
+            final match = matches[index % matches.length];
+            final rawUrl = match.group(1)?.replaceAll(r'\/', '/');
+            if (rawUrl != null) {
+              // Ganti _m.jpg (240px) ke _b.jpg (1024px HD) untuk kejernihan maksimal
+              final hdUrl = rawUrl.replaceAll('_m.jpg', '_b.jpg');
+              final dlRes = await http.get(Uri.parse(hdUrl)).timeout(const Duration(seconds: 10));
+              if (dlRes.statusCode == 200 && dlRes.bodyBytes.length > 5000) {
+                imageBytes = dlRes.bodyBytes;
               }
-            }),
-          ).timeout(const Duration(seconds: 8));
-
-          if (resp.statusCode == 200) {
-            final data = jsonDecode(resp.body);
-            final b64 = data['predictions']?[0]?['bytesBase64Encoded'] ?? data['predictions']?[0]?['imageBytes'];
-            if (b64 != null) {
-              imageBytes = base64Decode(b64.toString());
             }
           }
-        } catch (_) {}
-      }
+        }
+      } catch (_) {}
 
-      // 2. Pollinations AI Flux / Sana (Bebas Biaya, Kualitas Tinggi, Akurat Sesuai Prompt)
+      // 2. Pollinations AI Image Engine (Generator AI Langsung Sesuai Prompt)
       if (imageBytes == null) {
         try {
           final seed = DateTime.now().millisecondsSinceEpoch + index * 997;
-          // Perhatikan: JANGAN sertakan nologo=true karena memicu limit pembayaran HTTP 402
-          final pollUrl = Uri.parse('https://image.pollinations.ai/prompt/${Uri.encodeComponent(fullAiPrompt)}?model=flux&width=720&height=1280&seed=$seed');
-          final pollRes = await http.get(
-            pollUrl,
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-              'Referer': 'https://pollinations.ai/',
-              'Accept': 'image/jpeg,image/webp,image/*,*/*',
-            },
-          ).timeout(const Duration(seconds: 15));
-
-          if (pollRes.statusCode == 200 && pollRes.bodyBytes.length > 5000 && !pollRes.body.startsWith('{')) {
-            imageBytes = pollRes.bodyBytes;
-          }
-        } catch (_) {}
-      }
-
-      // 3. Wikimedia Commons HD Search (Pencarian visual nyata & sejarah menggunakan kata kunci Inggris akurat)
-      if (imageBytes == null) {
-        try {
-          final queryKeywords = searchKeywords.isNotEmpty
-              ? searchKeywords
-              : (basePrompt.split(',').first.trim().isNotEmpty ? basePrompt.split(',').first.trim() : topic);
-          final wikiUrl = Uri.parse('https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrnamespace=6&gsrsearch=${Uri.encodeComponent(queryKeywords)}&prop=imageinfo&iiprop=url&iiurlwidth=1080&format=json');
-          final wikiRes = await http.get(wikiUrl).timeout(const Duration(seconds: 8));
-          if (wikiRes.statusCode == 200) {
-            final wikiData = jsonDecode(wikiRes.body);
-            final pages = wikiData['query']?['pages'];
-            if (pages is Map && pages.isNotEmpty) {
-              final pageKeys = pages.keys.toList();
-              final pageKey = pageKeys[index % pageKeys.length];
-              final imgInfo = pages[pageKey]?['imageinfo'];
-              if (imgInfo is List && imgInfo.isNotEmpty) {
-                final dlUrl = imgInfo[0]['thumburl'] ?? imgInfo[0]['url'];
-                if (dlUrl != null) {
-                  final dlRes = await http.get(
-                    Uri.parse(dlUrl.toString()),
-                    headers: {'User-Agent': 'ShortsCreatorApp/2.0 (contact@creative.app)'},
-                  ).timeout(const Duration(seconds: 10));
-                  if (dlRes.statusCode == 200 && dlRes.bodyBytes.length > 5000) {
-                    imageBytes = dlRes.bodyBytes;
-                  }
-                }
-              }
-            }
-          }
-        } catch (_) {}
-      }
-
-      // 4. Pollinations AI Standard Engine (Cadangan AI Alternatif jika model Flux padat)
-      if (imageBytes == null) {
-        try {
-          final seed = DateTime.now().millisecondsSinceEpoch + index * 613;
-          final fallbackPrompt = searchKeywords.isNotEmpty ? '$searchKeywords cinematic vertical 8k' : '$topic cinematic vertical';
-          final pollUrl = Uri.parse('https://image.pollinations.ai/prompt/${Uri.encodeComponent(fallbackPrompt)}?width=720&height=1280&seed=$seed');
+          final cleanPrompt = searchKeywords.isNotEmpty
+              ? '$searchKeywords cinematic'
+              : (basePrompt.isNotEmpty ? basePrompt.split(',').take(3).join(',') : topic);
+          final pollUrl = Uri.parse('https://image.pollinations.ai/prompt/${Uri.encodeComponent(cleanPrompt)}?seed=$seed');
           final pollRes = await http.get(
             pollUrl,
             headers: {
@@ -604,14 +559,41 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
         } catch (_) {}
       }
 
-      // 5. Wikimedia Commons Topik Luas (Jika adegan sangat unik, cari tema umum topik dalam bahasa Inggris)
+      // 3. Google Imagen 3 (Jika API key akun mendukung Imagen)
+      if (imageBytes == null && geminiKey.isNotEmpty) {
+        try {
+          final urlPredict = Uri.parse('https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=$geminiKey');
+          final resp = await http.post(
+            urlPredict,
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': geminiKey,
+            },
+            body: jsonEncode({
+              'instances': [{'prompt': '$basePrompt, topic: $topic, vertical 9:16 cinematic photorealistic'}],
+              'parameters': {'sampleCount': 1, 'aspectRatio': '9:16', 'outputMimeType': 'image/jpeg'}
+            }),
+          ).timeout(const Duration(seconds: 8));
+
+          if (resp.statusCode == 200) {
+            final data = jsonDecode(resp.body);
+            final b64 = data['predictions']?[0]?['bytesBase64Encoded'] ?? data['predictions']?[0]?['imageBytes'];
+            if (b64 != null) {
+              imageBytes = base64Decode(b64.toString());
+            }
+          }
+        } catch (_) {}
+      }
+
+      // 4. Wikimedia Commons (Jika server Wikimedia kembali online)
       if (imageBytes == null) {
         try {
-          final generalTopic = searchKeywords.isNotEmpty
-              ? searchKeywords.split(' ').first
-              : topic.replaceAll(RegExp(r'[^a-zA-Z0-9 ]'), ' ').trim();
-          final wikiUrl = Uri.parse('https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrnamespace=6&gsrsearch=${Uri.encodeComponent(generalTopic)}&prop=imageinfo&iiprop=url&iiurlwidth=1080&format=json');
-          final wikiRes = await http.get(wikiUrl).timeout(const Duration(seconds: 8));
+          final cleanKeyword = tagList.take(2).join(' ');
+          final wikiUrl = Uri.parse('https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrnamespace=6&gsrsearch=${Uri.encodeComponent(cleanKeyword)}&prop=imageinfo&iiprop=url&iiurlwidth=1080&format=json');
+          final wikiRes = await http.get(
+            wikiUrl,
+            headers: {'User-Agent': 'ShortsCreatorApp/2.0 (contact@creative.app)'},
+          ).timeout(const Duration(seconds: 8));
           if (wikiRes.statusCode == 200) {
             final wikiData = jsonDecode(wikiRes.body);
             final pages = wikiData['query']?['pages'];
@@ -622,13 +604,33 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
               if (imgInfo is List && imgInfo.isNotEmpty) {
                 final dlUrl = imgInfo[0]['thumburl'] ?? imgInfo[0]['url'];
                 if (dlUrl != null) {
-                  final dlRes = await http.get(
-                    Uri.parse(dlUrl.toString()),
-                    headers: {'User-Agent': 'ShortsCreatorApp/2.0 (contact@creative.app)'},
-                  ).timeout(const Duration(seconds: 10));
+                  final dlRes = await http.get(Uri.parse(dlUrl.toString())).timeout(const Duration(seconds: 8));
                   if (dlRes.statusCode == 200 && dlRes.bodyBytes.length > 5000) {
                     imageBytes = dlRes.bodyBytes;
                   }
+                }
+              }
+            }
+          }
+        } catch (_) {}
+      }
+
+      // 5. Flickr Pencarian Topik Umum (Penyelamat Terakhir Sesuai Tema Cerita)
+      if (imageBytes == null) {
+        try {
+          final generalTag = tagList.isNotEmpty ? tagList.first : 'history';
+          final flickrUrl = Uri.parse('https://www.flickr.com/services/feeds/photos_public.gne?tags=${Uri.encodeComponent(generalTag)}&format=json&nojsoncallback=1');
+          final feedRes = await http.get(flickrUrl).timeout(const Duration(seconds: 8));
+          if (feedRes.statusCode == 200) {
+            final matches = RegExp(r'"m"\s*:\s*"([^"]+)"').allMatches(feedRes.body).toList();
+            if (matches.isNotEmpty) {
+              final match = matches[(index + 1) % matches.length];
+              final rawUrl = match.group(1)?.replaceAll(r'\/', '/');
+              if (rawUrl != null) {
+                final hdUrl = rawUrl.replaceAll('_m.jpg', '_b.jpg');
+                final dlRes = await http.get(Uri.parse(hdUrl)).timeout(const Duration(seconds: 8));
+                if (dlRes.statusCode == 200 && dlRes.bodyBytes.length > 5000) {
+                  imageBytes = dlRes.bodyBytes;
                 }
               }
             }
