@@ -44,6 +44,40 @@ class _HomeScreenState extends State<HomeScreen> {
   int _imageGeneratingIndex = -1;
   bool _useAiImages = true;
 
+  String _selectedArtStyle = 'cinematic';
+  final List<Map<String, String>> _artStyles = [
+    {
+      'id': 'cinematic',
+      'name': '🎬 Sinematik Fotorealistik',
+      'desc': 'Fotorealistik 8K, pencahayaan film dramatis, studio quality',
+      'modifier': 'cinematic lighting, photorealistic 8k, dramatic atmosphere, vertical 9:16 aspect ratio, highly detailed, master photography, no watermark, no text',
+    },
+    {
+      'id': 'dark_mystery',
+      'name': '🌑 Misteri / Dark Moody',
+      'desc': 'Gelap, misterius, bayangan pekat, suspense & thriller',
+      'modifier': 'dark moody lighting, mystery thriller atmosphere, cinematic shadows, eerie suspense, highly detailed, vertical 9:16 aspect ratio, no text',
+    },
+    {
+      'id': 'vibrant_3d',
+      'name': '🎨 3D Animasi / Digital Art',
+      'desc': '3D render modern, warna hidup & tajam, Pixar/Unreal style',
+      'modifier': '3d render style, octane render, vivid dramatic lighting, stylized digital art, high quality, vertical 9:16 aspect ratio, no watermark, no text',
+    },
+    {
+      'id': 'anime',
+      'name': '⛩️ Anime Sinematik',
+      'desc': 'Ilustrasi anime detail ala Makoto Shinkai, pemandangan memukau',
+      'modifier': 'makoto shinkai aesthetic, gorgeous detailed anime scenery, vibrant cinematic colors, anime masterpiece, vertical 9:16, no text',
+    },
+    {
+      'id': 'historical',
+      'name': '📜 Klasik / Arsip Sejarah',
+      'desc': 'Nuansa sejarah autentik, vintage, dokumenter berkelas',
+      'modifier': 'historical vintage photograph, authentic archival style, dramatic lighting, antique atmosphere, vertical 9:16 aspect ratio, highly detailed, no text',
+    },
+  ];
+
   final List<Map<String, String>> _musicList = [
     {
       'id': 'music1.mp3',
@@ -239,10 +273,21 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _isGeneratingScript = true);
 
     try {
+      final styleObj = _artStyles.firstWhere(
+        (s) => s['id'] == _selectedArtStyle,
+        orElse: () => _artStyles.first,
+      );
+      final styleName = styleObj['name']!;
+      final styleModifier = styleObj['modifier']!;
+
       final promptText = '''
 Bertindaklah sebagai Scriptwriter & Sutradara Konten Video Pendek Papan Atas (Viral Retention Specialist untuk YouTube Shorts, Instagram Reels, FB Pro, dan TikTok).
 Tugas Anda: Buatkan naskah yang MENGHENTAK, SANGAT MEMIKAT, dan konsep visual per adegan untuk video durasi 45-60 detik mengenai topik berikut:
 "$topic"
+
+PANDUAN GAYA VISUAL AI:
+Gaya visual yang dipilih pengguna: "$styleName".
+Setiap deskripsi visual `image_prompt` HARUS dirancang dalam Bahasa Inggris dengan gaya ini ($styleModifier).
 
 PANDUAN VIRAL & RETENSI TINGGI (HIGH RETENTION):
 1. title: Judul super memikat (maksimal 60 karakter), mengandung misteri/kontradiksi yang bikin penasaran (curiosity gap), dilengkapi emoji menarik dan hashtag (#shorts #fakta).
@@ -252,8 +297,10 @@ PANDUAN VIRAL & RETENSI TINGGI (HIGH RETENTION):
    - ADEGAN TENGAH: Bangun rasa penasaran, kupas rahasia/fakta ilmiah/sejarah yang 99% orang belum tahu secara runut dan padat.
    - ADEGAN TERAKHIR: Penutup klimaks dan lempar pertanyaan tebak-tebakan atau perdebatan terbuka untuk memicu penonton berdebat di kolom komentar.
 4. narration: Bahasa Indonesia lisan yang santai, tegas, berbobot, dan mengalir cepat (total gabungan seluruh narasi 110-140 kata untuk 45-60 detik). Tuliskan HANYA kata-kata yang diucapkan suara narasi (voiceover only). Dilarang menulis tanda kurung atau petunjuk teks.
-5. image_prompt: Deskripsi visual sinematik BAHASA INGGRIS yang SANGAT DETAIL dan 100% RELEVAN dengan cerita adegan tersebut (subjek utama, pencahayaan dramatis, detail kostum/objek, suasana dramatis, sudut kamera, cinematic vertical 9:16, photorealistic 8k, highly detailed, no text, no watermark).
-6. search_keywords: 2-3 KATA KUNCI BAHASA INGGRIS yang sangat spesifik dan akurat untuk adegan ini (contoh: "pirate ship storm", "pirate captain eyepatch closeup", "dark wooden ship cabin"). KATA KUNCI INI HARUS TEPAT SASARAN.
+5. image_prompt: Deskripsi visual BAHASA INGGRIS yang SANGAT DETAIL, KONKRET, dan 100% MENGGAMBARKAN AKSI/OBJEK di adegan ini.
+   - Tuliskan subjek utama secara fisik, sudut pandang kamera, dan suasana (misal: "close-up shot of an ancient brass compass spinning wildly on an old weathered pirate wooden table, dramatic cinematic lighting, 8k resolution, vertical 9:16 aspect ratio, hyper-detailed").
+   - DILARANG menggunakan kata-kata abstrak seperti "happiness", "curiosity", "power". Tuliskan objek dan pemandangan nyata yang tertangkap lensa kamera!
+6. search_keywords: 2-3 KATA KUNCI BAHASA INGGRIS yang sangat spesifik dan akurat untuk adegan ini (contoh: "ancient compass", "pirate table", "brass compass macro").
 7. script: Gabungan lengkap narasi dari seluruh adegan berurutan.
 
 KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
@@ -495,61 +542,110 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
     try {
       Uint8List? imageBytes;
 
-      // Bersihkan kata kunci pencarian dalam bahasa Inggris
-      List<String> tagList = [];
-      if (searchKeywords.isNotEmpty) {
-        tagList.addAll(searchKeywords.toLowerCase().split(RegExp(r'[\s,]+')));
-      }
-      if (tagList.isEmpty && basePrompt.isNotEmpty) {
-        final firstPart = basePrompt.split(',').first;
-        tagList.addAll(firstPart.toLowerCase().split(RegExp(r'[\s,]+')));
-      }
-      tagList = tagList.where((t) => t.length > 2 && !['the', 'and', 'with', 'for', 'photo', 'image', 'visual'].contains(t)).toList();
-      if (tagList.isEmpty) {
-        tagList = ['cinematic', 'wallpaper'];
-      }
-      final String flickrTags = tagList.take(4).join(',');
+      // Ambil modifier gaya visual yang dipilih pengguna
+      final styleObj = _artStyles.firstWhere(
+        (s) => s['id'] == _selectedArtStyle,
+        orElse: () => _artStyles.first,
+      );
+      final styleModifier = styleObj['modifier']!;
 
-      // 1. Flickr Thematic HD Search (Sangat Cepat, 100% Berhasil di Seluruh Jaringan Seluler / Wi-Fi)
-      try {
-        final flickrUrl = Uri.parse('https://www.flickr.com/services/feeds/photos_public.gne?tags=${Uri.encodeComponent(flickrTags)}&tagmode=any&format=json&nojsoncallback=1');
-        final feedRes = await http.get(
-          flickrUrl,
-          headers: {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'},
-        ).timeout(const Duration(seconds: 8));
+      // Susun prompt deskriptif AI yang kaya dan tajam
+      String coreScene = basePrompt;
+      if (coreScene.isEmpty) {
+        coreScene = searchKeywords.isNotEmpty ? '$searchKeywords $topic' : topic;
+      }
+      coreScene = coreScene.replaceAll(RegExp(r'[\r\n"]'), ' ').trim();
+      final fullAiPrompt = '$coreScene, $styleModifier';
 
-        if (feedRes.statusCode == 200) {
-          final body = feedRes.body;
-          final matches = RegExp(r'"m"\s*:\s*"([^"]+)"').allMatches(body).toList();
-          if (matches.isNotEmpty) {
-            // Pilih gambar berdasarkan indeks adegan agar variatif
-            final match = matches[index % matches.length];
-            final rawUrl = match.group(1)?.replaceAll(r'\/', '/');
-            if (rawUrl != null) {
-              // Ganti _m.jpg (240px) ke _b.jpg (1024px HD) untuk kejernihan maksimal
-              final hdUrl = rawUrl.replaceAll('_m.jpg', '_b.jpg');
-              final dlRes = await http.get(Uri.parse(hdUrl)).timeout(const Duration(seconds: 10));
-              if (dlRes.statusCode == 200 && dlRes.bodyBytes.length > 5000) {
-                imageBytes = dlRes.bodyBytes;
+      // 1. Google Imagen 3 (Jika API Key mendukung Imagen)
+      if (geminiKey.isNotEmpty) {
+        try {
+          final urlPredict = Uri.parse(
+              'https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=$geminiKey');
+          final resp = await http.post(
+            urlPredict,
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': geminiKey,
+            },
+            body: jsonEncode({
+              'instances': [
+                {'prompt': fullAiPrompt}
+              ],
+              'parameters': {
+                'sampleCount': 1,
+                'aspectRatio': '9:16',
+                'outputMimeType': 'image/jpeg'
               }
+            }),
+          ).timeout(const Duration(seconds: 12));
+
+          if (resp.statusCode == 200) {
+            final data = jsonDecode(resp.body);
+            final b64 = data['predictions']?[0]?['bytesBase64Encoded'] ??
+                data['predictions']?[0]?['imageBytes'];
+            if (b64 != null) {
+              imageBytes = base64Decode(b64.toString());
             }
           }
-        }
-      } catch (_) {}
+        } catch (_) {}
+      }
 
-      // 2. Pollinations AI Image Engine (Generator AI Langsung Sesuai Prompt)
+      // 2. Pollinations AI (Model Flux: Kualitas Ultra HD, Sinematik & 100% Sesuai Naskah)
       if (imageBytes == null) {
         try {
-          final seed = DateTime.now().millisecondsSinceEpoch + index * 997;
-          final cleanPrompt = searchKeywords.isNotEmpty
-              ? '$searchKeywords cinematic'
-              : (basePrompt.isNotEmpty ? basePrompt.split(',').take(3).join(',') : topic);
-          final pollUrl = Uri.parse('https://image.pollinations.ai/prompt/${Uri.encodeComponent(cleanPrompt)}?seed=$seed');
+          final seed = DateTime.now().millisecondsSinceEpoch + (index * 997);
+          final pollUrl = Uri.parse(
+              'https://image.pollinations.ai/prompt/${Uri.encodeComponent(fullAiPrompt)}?width=720&height=1280&model=flux&seed=$seed&nologo=true');
           final pollRes = await http.get(
             pollUrl,
             headers: {
               'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-              'Referer': 'https://pollinations.ai/',
+              'Accept': 'image/*',
+            },
+          ).timeout(const Duration(seconds: 16));
+
+          if (pollRes.statusCode == 200 && pollRes.bodyBytes.length > 5000 && !pollRes.body.startsWith('{')) {
+            imageBytes = pollRes.bodyBytes;
+          }
+        } catch (_) {}
+      }
+
+      // 3. Pollinations AI (Model Turbo: Cepat 2-4 detik jika Flux antre)
+      if (imageBytes == null) {
+        try {
+          final seed = DateTime.now().millisecondsSinceEpoch + (index * 555) + 3;
+          final concisePrompt = searchKeywords.isNotEmpty
+              ? '$searchKeywords, $styleModifier'
+              : (coreScene.length > 100 ? '${coreScene.substring(0, 100)}, $styleModifier' : fullAiPrompt);
+          final pollUrl = Uri.parse(
+              'https://image.pollinations.ai/prompt/${Uri.encodeComponent(concisePrompt)}?width=720&height=1280&model=turbo&seed=$seed&nologo=true');
+          final pollRes = await http.get(
+            pollUrl,
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+              'Accept': 'image/*',
+            },
+          ).timeout(const Duration(seconds: 14));
+
+          if (pollRes.statusCode == 200 && pollRes.bodyBytes.length > 5000 && !pollRes.body.startsWith('{')) {
+            imageBytes = pollRes.bodyBytes;
+          }
+        } catch (_) {}
+      }
+
+      // 4. Pollinations AI (Engine SDXL Standar)
+      if (imageBytes == null) {
+        try {
+          final seed = DateTime.now().millisecondsSinceEpoch + (index * 777) + 11;
+          final simplePrompt = '$coreScene, 9:16 vertical cinematic';
+          final pollUrl = Uri.parse(
+              'https://image.pollinations.ai/prompt/${Uri.encodeComponent(simplePrompt)}?width=720&height=1280&seed=$seed&nologo=true');
+          final pollRes = await http.get(
+            pollUrl,
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+              'Accept': 'image/*',
             },
           ).timeout(const Duration(seconds: 12));
 
@@ -559,103 +655,94 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
         } catch (_) {}
       }
 
-      // 3. Google Imagen 3 (Jika API key akun mendukung Imagen)
-      if (imageBytes == null && geminiKey.isNotEmpty) {
-        try {
-          final urlPredict = Uri.parse('https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=$geminiKey');
-          final resp = await http.post(
-            urlPredict,
-            headers: {
-              'Content-Type': 'application/json',
-              'x-goog-api-key': geminiKey,
-            },
-            body: jsonEncode({
-              'instances': [{'prompt': '$basePrompt, topic: $topic, vertical 9:16 cinematic photorealistic'}],
-              'parameters': {'sampleCount': 1, 'aspectRatio': '9:16', 'outputMimeType': 'image/jpeg'}
-            }),
-          ).timeout(const Duration(seconds: 8));
-
-          if (resp.statusCode == 200) {
-            final data = jsonDecode(resp.body);
-            final b64 = data['predictions']?[0]?['bytesBase64Encoded'] ?? data['predictions']?[0]?['imageBytes'];
-            if (b64 != null) {
-              imageBytes = base64Decode(b64.toString());
-            }
-          }
-        } catch (_) {}
-      }
-
-      // 4. Wikimedia Commons (Jika server Wikimedia kembali online)
-      if (imageBytes == null) {
-        try {
-          final cleanKeyword = tagList.take(2).join(' ');
-          final wikiUrl = Uri.parse('https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrnamespace=6&gsrsearch=${Uri.encodeComponent(cleanKeyword)}&prop=imageinfo&iiprop=url&iiurlwidth=1080&format=json');
-          final wikiRes = await http.get(
-            wikiUrl,
-            headers: {'User-Agent': 'ShortsCreatorApp/2.0 (contact@creative.app)'},
-          ).timeout(const Duration(seconds: 8));
-          if (wikiRes.statusCode == 200) {
-            final wikiData = jsonDecode(wikiRes.body);
-            final pages = wikiData['query']?['pages'];
-            if (pages is Map && pages.isNotEmpty) {
-              final pageKeys = pages.keys.toList();
-              final pageKey = pageKeys[index % pageKeys.length];
-              final imgInfo = pages[pageKey]?['imageinfo'];
-              if (imgInfo is List && imgInfo.isNotEmpty) {
-                final dlUrl = imgInfo[0]['thumburl'] ?? imgInfo[0]['url'];
-                if (dlUrl != null) {
-                  final dlRes = await http.get(Uri.parse(dlUrl.toString())).timeout(const Duration(seconds: 8));
-                  if (dlRes.statusCode == 200 && dlRes.bodyBytes.length > 5000) {
-                    imageBytes = dlRes.bodyBytes;
-                  }
-                }
-              }
-            }
-          }
-        } catch (_) {}
-      }
-
-      // 5. Flickr Pencarian Topik Umum (Penyelamat Terakhir Sesuai Tema Cerita)
-      if (imageBytes == null) {
-        try {
-          final generalTag = tagList.isNotEmpty ? tagList.first : 'history';
-          final flickrUrl = Uri.parse('https://www.flickr.com/services/feeds/photos_public.gne?tags=${Uri.encodeComponent(generalTag)}&format=json&nojsoncallback=1');
-          final feedRes = await http.get(flickrUrl).timeout(const Duration(seconds: 8));
-          if (feedRes.statusCode == 200) {
-            final matches = RegExp(r'"m"\s*:\s*"([^"]+)"').allMatches(feedRes.body).toList();
-            if (matches.isNotEmpty) {
-              final match = matches[(index + 1) % matches.length];
-              final rawUrl = match.group(1)?.replaceAll(r'\/', '/');
-              if (rawUrl != null) {
-                final hdUrl = rawUrl.replaceAll('_m.jpg', '_b.jpg');
-                final dlRes = await http.get(Uri.parse(hdUrl)).timeout(const Duration(seconds: 8));
-                if (dlRes.statusCode == 200 && dlRes.bodyBytes.length > 5000) {
-                  imageBytes = dlRes.bodyBytes;
-                }
-              }
-            }
-          }
-        } catch (_) {}
-      }
-
       if (imageBytes != null) {
         if (mounted) {
           setState(() {
             _scenes[index]['image_bytes'] = imageBytes;
             _scenes[index]['is_loading'] = false;
+            _scenes[index]['error'] = null;
           });
         }
       } else {
-        throw Exception('Gagal membuat visual adegan');
+        throw Exception('Gagal membuat visual AI untuk adegan ini');
       }
     } catch (e) {
       if (mounted) {
         setState(() {
           _scenes[index]['is_loading'] = false;
-          _scenes[index]['error'] = e.toString();
+          _scenes[index]['error'] = e.toString().replaceAll('Exception: ', '');
         });
       }
     }
+  }
+
+  void _showEditPromptDialog(int index) {
+    if (index < 0 || index >= _scenes.length) return;
+    final currentPrompt = (_scenes[index]['image_prompt'] ?? '').toString();
+    final promptCtrl = TextEditingController(text: currentPrompt);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        title: Row(
+          children: [
+            const Icon(Icons.edit_note, color: Colors.amber, size: 22),
+            const SizedBox(width: 8),
+            Text(
+              'Edit Prompt Adegan ${index + 1}',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Ketik instruksi visual (disarankan Bahasa Inggris) agar AI menggambar visual sesuai imajinasi Anda:',
+              style: TextStyle(fontSize: 12, color: Colors.grey[400]),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: promptCtrl,
+              maxLines: 4,
+              style: const TextStyle(fontSize: 13, color: Colors.white),
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: const Color(0xFF0F172A),
+                hintText: 'Contoh: close-up pirate captain with eyepatch steering wooden wheel in heavy storm, lightning...',
+                hintStyle: const TextStyle(fontSize: 12, color: Colors.grey),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Batal', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              final newPrompt = promptCtrl.text.trim();
+              Navigator.pop(ctx);
+              setState(() {
+                _scenes[index]['image_prompt'] = newPrompt;
+              });
+              _generateSingleSceneImage(index);
+            },
+            icon: const Icon(Icons.auto_awesome, size: 16),
+            label: const Text('Simpan & Generate AI'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.amber[800],
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _pickImageForScene(int index) async {
@@ -734,29 +821,42 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
               ),
             ),
             const SizedBox(height: 10),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                ElevatedButton.icon(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    _generateSingleSceneImage(index);
-                  },
-                  icon: const Icon(Icons.refresh, size: 16),
-                  label: const Text('Generate Ulang AI'),
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.amber[800]),
-                ),
-                const SizedBox(width: 8),
-                OutlinedButton.icon(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    _pickImageForScene(index);
-                  },
-                  icon: const Icon(Icons.photo_library, size: 16),
-                  label: const Text('Dari Galeri'),
-                  style: OutlinedButton.styleFrom(foregroundColor: Colors.white),
-                ),
-              ],
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _showEditPromptDialog(index);
+                    },
+                    icon: const Icon(Icons.edit_note, size: 16),
+                    label: const Text('Edit Prompt'),
+                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6366F1), foregroundColor: Colors.white),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _generateSingleSceneImage(index);
+                    },
+                    icon: const Icon(Icons.refresh, size: 16),
+                    label: const Text('Generate Ulang AI'),
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.amber[800], foregroundColor: Colors.white),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _pickImageForScene(index);
+                    },
+                    icon: const Icon(Icons.photo_library, size: 16),
+                    label: const Text('Dari Galeri'),
+                    style: OutlinedButton.styleFrom(foregroundColor: Colors.white),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -782,9 +882,18 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
               mainAxisSize: MainAxisSize.min,
               children: [
                 ListTile(
-                  leading: const Icon(Icons.auto_awesome, color: Colors.amber),
-                  title: const Text('Generate Ulang dengan AI', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                  subtitle: const Text('Buat visual AI baru dengan prompt otomatis', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                  leading: const Icon(Icons.edit_note, color: Colors.amber),
+                  title: const Text('Edit Prompt Visual AI', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  subtitle: const Text('Sesuaikan instruksi AI agar gambar persis seperti yang Anda inginkan', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _showEditPromptDialog(index);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.auto_awesome, color: Colors.amberAccent),
+                  title: const Text('Generate Ulang AI', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  subtitle: const Text('Buat ulang visual AI dengan variasi gambar baru', style: TextStyle(color: Colors.white54, fontSize: 12)),
                   onTap: () {
                     Navigator.pop(ctx);
                     _generateSingleSceneImage(index);
@@ -793,7 +902,7 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
                 ListTile(
                   leading: const Icon(Icons.photo_library, color: Colors.blueAccent),
                   title: const Text('Pilih Foto dari Galeri HP', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                  subtitle: const Text('Gunakan foto milik Anda sendiri untuk adegan ini', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                  subtitle: const Text('Gunakan foto milik Anda sendiri untuk adesan ini', style: TextStyle(color: Colors.white54, fontSize: 12)),
                   onTap: () {
                     Navigator.pop(ctx);
                     _pickImageForScene(index);
@@ -825,6 +934,9 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
       if (!mounted) break;
       setState(() => _imageGeneratingIndex = i);
       await _generateSingleSceneImage(i);
+      if (i < _scenes.length - 1) {
+        await Future.delayed(const Duration(milliseconds: 600));
+      }
     }
 
     if (mounted) {
@@ -872,11 +984,16 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
     }
     final newIndex = _scenes.length;
     final topic = _topicController.text.trim();
+    final styleObj = _artStyles.firstWhere(
+      (s) => s['id'] == _selectedArtStyle,
+      orElse: () => _artStyles.first,
+    );
+    final styleModifier = styleObj['modifier']!;
     setState(() {
       _scenes.add({
         'scene_number': newIndex + 1,
         'narration': 'Lanjutan cerita menarik mengenai $topic...',
-        'image_prompt': 'Cinematic vertical 9:16 photorealistic visual, scene ${newIndex + 1} for topic: $topic, high quality, 8k resolution, dramatic lighting',
+        'image_prompt': 'Scene ${newIndex + 1} for topic: $topic, $styleModifier',
         'image_bytes': null,
         'is_loading': false,
         'error': null,
@@ -1279,6 +1396,51 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
                     ),
                     const SizedBox(height: 12),
 
+                    // Pilihan Gaya Visual AI
+                    const Row(
+                      children: [
+                        Icon(Icons.palette_outlined, color: Colors.amber, size: 16),
+                        SizedBox(width: 6),
+                        Text(
+                          'Gaya Visual AI (Art Style):',
+                          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1E293B),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.white12),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: _selectedArtStyle,
+                          isExpanded: true,
+                          dropdownColor: const Color(0xFF1E293B),
+                          items: _artStyles.map((s) {
+                            return DropdownMenuItem<String>(
+                              value: s['id'],
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(s['name']!, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white)),
+                                  Text(s['desc']!, style: TextStyle(fontSize: 10, color: Colors.grey[400])),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                          onChanged: (val) {
+                            if (val != null) setState(() => _selectedArtStyle = val);
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+
                     // Tombol Buat Naskah AI
                     SizedBox(
                       width: double.infinity,
@@ -1612,9 +1774,19 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
                                                   child: Column(
                                                     mainAxisSize: MainAxisSize.min,
                                                     children: [
-                                                      Icon(Icons.image_search, color: Colors.amber.withOpacity(0.8), size: 28),
+                                                      Icon(
+                                                        sc['error'] != null ? Icons.refresh : Icons.image_search,
+                                                        color: sc['error'] != null ? Colors.orangeAccent : Colors.amber.withOpacity(0.8),
+                                                        size: 26,
+                                                      ),
                                                       const SizedBox(height: 4),
-                                                      const Text('Ketuk untuk muat', style: TextStyle(fontSize: 9, color: Colors.white70)),
+                                                      Text(
+                                                        sc['error'] != null ? 'Gagal. Coba lagi' : 'Ketuk untuk muat',
+                                                        style: TextStyle(
+                                                          fontSize: 9,
+                                                          color: sc['error'] != null ? Colors.orangeAccent : Colors.white70,
+                                                        ),
+                                                      ),
                                                     ],
                                                   ),
                                                 )),
@@ -1639,7 +1811,7 @@ KEMBALIKAN HANYA FORMAT JSON MURNI TANPA PENJELASAN LAIN:
                                   child: OutlinedButton.icon(
                                     onPressed: isLoading ? null : () => _showSceneImageOptions(idx),
                                     icon: const Icon(Icons.tune, size: 12),
-                                    label: const Text('Ganti Gambar', style: TextStyle(fontSize: 10)),
+                                    label: const Text('Atur / Edit Visual', style: TextStyle(fontSize: 10)),
                                     style: OutlinedButton.styleFrom(
                                       padding: EdgeInsets.zero,
                                       foregroundColor: Colors.white70,
